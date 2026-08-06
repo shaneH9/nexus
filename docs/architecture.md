@@ -1635,80 +1635,210 @@ position size. See
 
 ---
 
-# 20. BookEvent
+# 20. Normalized Market Events and Sources
 
-Fundamental order-book event:
-
-```text
-BookEvent
-{
-    event_id
-    instrument_id
-
-    exchange_time
-    receive_time
-    process_time
-
-    sequence_number
-
-    action
-    side
-
-    price
-    quantity
-
-    order_id
-    trade_id
-
-    flags
-}
-```
-
-Possible actions:
+The implemented market-data boundary uses three small immutable contracts rather
+than one vendor-shaped message:
 
 ```text
-ADD
-MODIFY
-CANCEL
-EXECUTE
-DELETE
-RESET
+MarketEvent = BookEvent | TradeEvent | QuoteEvent
 ```
+
+Every variant identifies `instrument_id`, `venue`, `sequence_number`, and the
+three causal timestamps:
+
+```text
+exchange_time <= receive_time <= process_time
+```
+
+All three timestamps must be timezone-aware and are normalized to UTC. This
+ordering is the initial deterministic research assumption. Real feeds may use
+clock domains that require a later explicit clock-quality policy; timestamps are
+never silently reordered.
+
+`BookEvent` has a typed UUID `event_id`, `action`, optional `side`, exact Decimal
+`price` and `quantity`, typed opaque provider `order_id`/`trade_id`, typed flags,
+and an explicit `book_mode`. Actions are:
+
+```text
+ADD | MODIFY | CANCEL | EXECUTE | DELETE | RESET
+```
+
+Sides are `BID` and `ASK`. Non-RESET events require side and price. Quantity is
+positive for `ADD`, `MODIFY`, `CANCEL`, and `EXECUTE`; `DELETE` requires no
+quantity; and `RESET` contains no order or level fields. Prices and quantities
+reject binary floats at the contract boundary.
+
+`TradeEvent` has its own typed UUID, provider trade identity, exact positive
+price/quantity, and `BUY | SELL | UNKNOWN` aggressor side. `UNKNOWN` is preserved
+and never inferred. `QuoteEvent` holds exact positive bid/ask prices and
+nonnegative sizes. Locked quotes are accepted; crossed quotes are rejected
+without repair.
+
+`MarketDataSource` is a provider-independent protocol returning normalized
+events. It is not coupled to SQLite or a network client. The offline
+`MockMarketDataSource` accepts either:
+
+* a versioned JSON object with `schema_version` equal to
+  `sra-nexus.mock-market-data.v1` and an `events` array; or
+* JSONL with one provider-shaped record per nonblank line.
+
+Provider keys are interpreted only in this adapter. Both formats pass through
+the same domain normalization and validation path. Invalid records identify
+their zero-based fixture position and stop the read.
+
+## Deterministic Ordering and Sequence Safety
+
+A sequence stream is identified by:
+
+```text
+(instrument_id, venue, event_kind)
+```
+
+Canonical cross-stream inspection order is:
+
+```text
+instrument_id
+venue
+event-kind rank (BOOK, TRADE, QUOTE)
+sequence_number
+exchange_time
+receive_time
+process_time
+stable event UUID
+```
+
+Sequence number is therefore primary within a stream; receive time never
+overrides it. Equal sequence numbers have a deterministic inspection order but
+remain invalid for reconstruction. Sequence number is required in this
+milestone, so there is no fabricated fallback for a missing sequence.
+
+The first accepted book event establishes the starting sequence. Every ordinary
+event thereafter must be exactly the prior sequence plus one. Duplicate,
+decreasing, and gapped sequences raise distinct typed errors and do not mutate
+state. `RESET` may bridge a forward gap, but may not duplicate or regress the
+sequence. It clears all orders and price levels, commits its sequence as the new
+baseline, and requires the next ordinary sequence number to be exactly one
+greater than the RESET sequence.
 
 ---
 
-# 21. BookSnapshot
+# 21. Deterministic Order-Book Reconstruction
+
+`OrderBook` reconstructs one `(instrument_id, venue)` market-by-order stream in
+memory. Active order state is keyed by typed `order_id` and stores side, price,
+and exact remaining quantity. Bid and ask aggregates are separate Decimal maps
+keyed by price. Each transition is evaluated against copied state; order state,
+levels, sequence, and snapshot time are committed only after every invariant
+passes.
+
+Transition semantics are:
+
+* `ADD` creates a new active order and adds its quantity to the level. Reusing an
+  active order ID fails.
+* `MODIFY` supplies the absolute new remaining quantity. Side is immutable, but
+  price may change; a price move removes the old remainder and adds the new
+  quantity at the new level.
+* `CANCEL` quantity is the amount to cancel, not the new remainder.
+* `EXECUTE` quantity is the executed amount and may carry a provider trade ID.
+* `DELETE` removes the order's entire remaining quantity.
+* `RESET` clears all active orders and aggregate levels as described above.
+
+Cancel or execution quantity may not exceed remaining quantity. Modify, cancel,
+execute, and delete require a known order and matching side/price where
+applicable. Negative depth, duplicate orders, tick-misaligned prices, stream
+mismatch, and crossed book state are explicit failures. Locked book state is
+allowed. Failed transitions are atomic and do not consume a sequence number.
+
+The contracts distinguish `MARKET_BY_ORDER` from `MARKET_BY_PRICE` without
+inventing order IDs. MBO reconstruction is complete in this milestone. MBP
+events can be represented with no order ID, but applying them raises an explicit
+`UnsupportedBookModeError`; aggregate transition semantics remain deferred.
+
+When reference data provides `Instrument.tick_size`, book prices must satisfy
+exact Decimal modulus:
+
+```text
+price % tick_size == 0
+```
+
+Unknown tick size explicitly skips this check. The current reference-aware
+validation boundary is `OrderBook`; raw trade and quote tick checks are deferred
+until their ingestion boundary receives versioned instrument reference data.
+
+---
+
+# 22. Price Levels and Book Snapshots
+
+`PriceLevel` is immutable and contains exact `price`, `aggregate_quantity`, and
+optional `order_count`. MBO snapshots always populate order count; future MBP
+snapshots may leave it unknown.
+
+`BookSnapshot` is an immutable on-demand view after any successfully accepted
+event:
 
 ```text
 BookSnapshot
 {
     instrument_id
-    timestamp
+    venue
+    timestamp                 # process_time of the last accepted event
+    sequence_number
 
-    bid_levels[]
-    ask_levels[]
+    bid_levels[]              # highest price to lowest
+    ask_levels[]              # lowest price to highest
 
     best_bid
     best_ask
-
     spread
     midprice
     microprice
-
-    bid_depth_N
-    ask_depth_N
 }
 ```
 
-Midprice:
+Snapshots are not persisted or emitted automatically by default. Replay may
+request one after every event, and research code may request one at any accepted
+event boundary. Empty sides produce `None` rather than fabricated prices.
+
+Definitions, in instrument price units, are:
+
+[
+BestBid=\max(ActiveBidPrices)
+]
+
+[
+BestAsk=\min(ActiveAskPrices)
+]
+
+[
+Spread=BestAsk-BestBid
+]
 
 [
 M_t=\frac{BestBid_t+BestAsk_t}{2}
 ]
 
+For top-of-book quantities:
+
+[
+MicroPrice=
+\frac{
+AskPrice\cdot BidQty+BidPrice\cdot AskQty
+}{
+BidQty+AskQty
+}
+]
+
+Spread, midprice, and microprice are `None` when a required side is absent.
+Microprice is also `None` when combined top-level quantity is zero. All feature
+functions use Decimal arithmetic.
+
+Raw depth remains directly available as `bid_depth_n(K)` and
+`ask_depth_n(K)`; `K` must be positive.
+
 ---
 
-# 22. Order-Book Imbalance
+# 23. Order-Book Imbalance and Weighted Depth
 
 For (K) levels:
 
@@ -1727,11 +1857,10 @@ Range:
 [-1,1]
 ]
 
-This is a supporting feature, not the SRA trading rule.
+An empty or zero denominator returns exact `Decimal(0)`. This is a supporting
+feature, not the SRA trading rule.
 
----
-
-# 23. Weighted Depth
+Weighted depth remains separate from raw depth:
 
 [
 WD_B=\sum_{k=1}^{K}w_kB_k
@@ -1753,7 +1882,40 @@ Possible starting weights:
 w_k=e^{-\alpha(k-1)}
 ]
 
-The value of (\alpha) must be calibrated rather than assumed optimal.
+The implemented deterministic initial configuration uses exact weights:
+
+```text
+(1, 0.5, 0.25, 0.125, 0.0625)
+```
+
+Custom weights must be positive and strictly decreasing. They are explicit
+engineering configuration, not empirically optimized parameters; the value of
+(\alpha) must be calibrated rather than assumed optimal.
+
+## Immutable Storage and Replay
+
+`RawMarketEventRepository` is the domain-facing append-only contract.
+`SQLiteRawMarketEventRepository` is the local development implementation. It
+stores normalized event payloads without update methods and enforces unique
+event UUID plus unique `(instrument_id, venue, event_kind, sequence_number)`.
+Exact duplicates, conflicting reuse of an event ID, and conflicting sequence
+identity return distinct typed results; existing data is never overwritten.
+
+Indexed queries support instrument lookup, inclusive sequence ranges for one
+stream, and an optional historical cutoff. Historical availability is gated by:
+
+```text
+process_time <= as_of
+```
+
+`MarketReplay` consumes either explicit book events or one repository book
+stream, applies canonical sequence ordering, and optionally returns a snapshot
+after each accepted event. It stops at the first gap, regression, duplicate,
+unsupported mode, or impossible order state. It never continues from a corrupt
+book. News replay, integrated cross-stream chronology, and persisted snapshot
+materialization remain separate future work.
+
+See [ADR 0005](decisions/0005-deterministic-order-book-reconstruction.md).
 
 ---
 
@@ -3203,9 +3365,16 @@ src/sra_nexus/
         news_state_service.py
 
     market_data/
-        ingestion.py
+        enums.py
+        events.py
+        exceptions.py
+        ordering.py
+        features.py
         book.py
         snapshots.py
+        sources/
+            base.py
+            mock.py
 
     sra/
         shock.py
@@ -3246,6 +3415,7 @@ src/sra_nexus/
         kill_switch.py
 
     backtest/
+        market_replay.py
         replay.py
         clock.py
         evaluation.py
@@ -3254,10 +3424,12 @@ src/sra_nexus/
         raw.py
         canonical.py
         event_graph.py
+        market_data.py
         normalized.py
         feature_store.py
         sqlite_reference.py
         sqlite_event_graph.py
+        sqlite_market_data.py
 
     monitoring/
         metrics.py
@@ -3482,9 +3654,9 @@ Deterministic event scoring: COMPLETE
 
 NewsState: COMPLETE
 
-Market-data ingestion: NOT STARTED
+Market-data ingestion: COMPLETE
 
-Order-book reconstruction: NOT STARTED
+Order-book reconstruction: COMPLETE
 
 Shock detection: NOT STARTED
 

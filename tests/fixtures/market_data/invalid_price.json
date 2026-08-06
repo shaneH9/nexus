@@ -1,0 +1,3 @@
+{"schema_version":"sra-nexus.mock-market-data.v1","events":[
+  {"message_type":"book_update","message_id":"55000000-0000-4000-8000-000000000001","instrument":"20000000-0000-4000-8000-000000000101","venue_code":"NASDAQ","exchange_timestamp":"2026-08-01T18:00:00Z","received_timestamp":"2026-08-01T18:00:00.001Z","processed_timestamp":"2026-08-01T18:00:00.002Z","sequence":1,"operation":"ADD","book_side":"BID","limit_price":"0","size":"1","provider_order_id":"bad-price"}
+]}

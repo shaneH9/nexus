@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-from decimal import Decimal
-
 from pydantic import Field, field_serializer, field_validator, model_validator
 
 from sra_nexus.common.models import (
     ContractModel,
     ImmutableJsonObject,
     NonBlankStr,
+    PositiveDecimal,
     UnitIntervalScore,
     UtcDatetime,
     freeze_json_object,
@@ -45,14 +44,12 @@ class Instrument(ContractModel):
     sector: NonBlankStr | None = None
     industry: NonBlankStr | None = None
     country: NonBlankStr | None = None
-    tick_size: Decimal | None = Field(
+    tick_size: PositiveDecimal | None = Field(
         default=None,
-        gt=0,
         description="Optional minimum price increment in currency units.",
     )
-    lot_size: Decimal | None = Field(
+    lot_size: PositiveDecimal | None = Field(
         default=None,
-        gt=0,
         description="Optional minimum tradable quantity in instrument units.",
     )
 

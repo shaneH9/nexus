@@ -1,0 +1,53 @@
+"""Stable categorical values for normalized market-data contracts."""
+
+from enum import StrEnum
+
+
+class MarketEventKind(StrEnum):
+    """Independent normalized market-event streams."""
+
+    BOOK = "BOOK"
+    TRADE = "TRADE"
+    QUOTE = "QUOTE"
+
+
+class BookAction(StrEnum):
+    """Supported deterministic order-book state transitions."""
+
+    ADD = "ADD"
+    MODIFY = "MODIFY"
+    CANCEL = "CANCEL"
+    EXECUTE = "EXECUTE"
+    DELETE = "DELETE"
+    RESET = "RESET"
+
+
+class BookSide(StrEnum):
+    """Displayed side of a limit order or aggregate price level."""
+
+    BID = "BID"
+    ASK = "ASK"
+
+
+class AggressorSide(StrEnum):
+    """Explicitly observed trade aggressor side."""
+
+    BUY = "BUY"
+    SELL = "SELL"
+    UNKNOWN = "UNKNOWN"
+
+
+class BookDataMode(StrEnum):
+    """Whether book events identify individual orders or only aggregate levels."""
+
+    MARKET_BY_ORDER = "MARKET_BY_ORDER"
+    MARKET_BY_PRICE = "MARKET_BY_PRICE"
+
+
+class MarketEventFlag(StrEnum):
+    """Small provider-neutral normalized market-event flag set."""
+
+    REGULAR = "REGULAR"
+    AUCTION = "AUCTION"
+    CORRECTION = "CORRECTION"
+    ODD_LOT = "ODD_LOT"

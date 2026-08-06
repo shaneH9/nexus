@@ -1,0 +1,4 @@
+{"schema_version":"sra-nexus.mock-market-data.v1","events":[
+  {"message_type":"book_update","message_id":"53000000-0000-4000-8000-000000000001","instrument":"20000000-0000-4000-8000-000000000101","venue_code":"NASDAQ","exchange_timestamp":"2026-08-01T17:00:00Z","received_timestamp":"2026-08-01T17:00:00.001Z","processed_timestamp":"2026-08-01T17:00:00.002Z","sequence":1,"operation":"ADD","book_side":"BID","limit_price":"100.00","size":"10","provider_order_id":"dup-1"},
+  {"message_type":"book_update","message_id":"53000000-0000-4000-8000-000000000002","instrument":"20000000-0000-4000-8000-000000000101","venue_code":"NASDAQ","exchange_timestamp":"2026-08-01T17:00:00.010Z","received_timestamp":"2026-08-01T17:00:00.011Z","processed_timestamp":"2026-08-01T17:00:00.012Z","sequence":1,"operation":"ADD","book_side":"ASK","limit_price":"100.01","size":"10","provider_order_id":"dup-2"}
+]}

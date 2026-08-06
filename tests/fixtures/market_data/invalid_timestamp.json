@@ -1,0 +1,3 @@
+{"schema_version":"sra-nexus.mock-market-data.v1","events":[
+  {"message_type":"trade_print","message_id":"54000000-0000-4000-8000-000000000001","instrument":"20000000-0000-4000-8000-000000000101","venue_code":"NASDAQ","exchange_timestamp":"not-a-timestamp","received_timestamp":"2026-08-01T18:00:00.001Z","processed_timestamp":"2026-08-01T18:00:00.002Z","sequence":1,"provider_trade_id":"bad-time","trade_price":"100.00","trade_size":"1","aggressor":"UNKNOWN"}
+]}

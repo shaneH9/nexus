@@ -3,7 +3,7 @@
 from typing import Self
 from uuid import UUID, uuid4
 
-from pydantic import ConfigDict, RootModel
+from pydantic import ConfigDict, RootModel, field_validator
 
 
 class _UuidIdentifier(RootModel[UUID]):
@@ -53,6 +53,47 @@ class ExposurePathId(_UuidIdentifier):
     """Stable internal identifier for one auditable event-exposure path."""
 
 
+class BookEventId(_UuidIdentifier):
+    """Stable internal identifier for an immutable order-book event."""
+
+
+class TradeEventId(_UuidIdentifier):
+    """Stable internal identifier for an immutable trade observation."""
+
+
+class QuoteEventId(_UuidIdentifier):
+    """Stable internal identifier for an immutable top-of-book quote observation."""
+
+
+class _OpaqueStringIdentifier(RootModel[str]):
+    """Immutable typed wrapper for a provider-defined opaque identifier."""
+
+    model_config = ConfigDict(frozen=True)
+
+    @field_validator("root", mode="before")
+    @classmethod
+    def normalize_identifier(cls, value: object) -> object:
+        """Trim a non-empty string without coercing numeric provider IDs."""
+        if not isinstance(value, str):
+            raise ValueError("opaque identifier must be a string")
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("opaque identifier must not be blank")
+        return normalized
+
+    def __str__(self) -> str:
+        """Return the normalized provider identifier."""
+        return self.root
+
+
+class MarketOrderId(_OpaqueStringIdentifier):
+    """Typed provider order identity within one market-data stream."""
+
+
+class MarketTradeId(_OpaqueStringIdentifier):
+    """Typed provider trade identity within one market-data stream."""
+
+
 def new_news_id() -> NewsId:
     """Return a new internal news identifier."""
     return NewsId.new()
@@ -91,3 +132,18 @@ def new_entity_instrument_link_id() -> EntityInstrumentLinkId:
 def new_exposure_path_id() -> ExposurePathId:
     """Return a new exposure-path identifier."""
     return ExposurePathId.new()
+
+
+def new_book_event_id() -> BookEventId:
+    """Return a new internal book-event identifier."""
+    return BookEventId.new()
+
+
+def new_trade_event_id() -> TradeEventId:
+    """Return a new internal trade-event identifier."""
+    return TradeEventId.new()
+
+
+def new_quote_event_id() -> QuoteEventId:
+    """Return a new internal quote-event identifier."""
+    return QuoteEventId.new()

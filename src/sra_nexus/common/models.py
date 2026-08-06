@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from datetime import UTC, datetime
+from decimal import Decimal
 from math import isfinite
 from types import MappingProxyType
 from typing import Annotated, cast
@@ -11,6 +12,7 @@ from typing import Annotated, cast
 from pydantic import (
     AfterValidator,
     BaseModel,
+    BeforeValidator,
     ConfigDict,
     Field,
     model_validator,
@@ -24,6 +26,12 @@ def _require_non_blank(value: str) -> str:
     if not stripped:
         raise ValueError("value must not be blank")
     return stripped
+
+
+def _reject_float_for_exact_decimal(value: object) -> object:
+    if isinstance(value, float):
+        raise ValueError("exact decimal values must not be constructed from float")
+    return value
 
 
 def normalize_utc_datetime(value: datetime) -> datetime:
@@ -76,6 +84,15 @@ def thaw_json_object(value: ImmutableJsonObject) -> dict[str, object]:
 
 NonBlankStr = Annotated[str, AfterValidator(_require_non_blank)]
 UtcDatetime = Annotated[datetime, AfterValidator(normalize_utc_datetime)]
+ExactDecimal = Annotated[Decimal, BeforeValidator(_reject_float_for_exact_decimal)]
+PositiveDecimal = Annotated[
+    ExactDecimal,
+    Field(gt=0, description="Exact decimal value greater than zero."),
+]
+NonNegativeDecimal = Annotated[
+    ExactDecimal,
+    Field(ge=0, description="Exact decimal value greater than or equal to zero."),
+]
 FiniteFloat = Annotated[
     float,
     Field(allow_inf_nan=False, description="Finite floating-point value."),
