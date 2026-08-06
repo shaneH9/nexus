@@ -239,7 +239,35 @@ CENTRAL_BANK
 GOVERNMENT
 GLOBAL_NEWS
 SOCIAL
+SPECULATIVE
+OTHER
 ```
+
+## Speculative Source Semantics
+
+`SPECULATIVE` represents alternative or nontraditional information sources that
+may contain useful market information but must not receive the same evidentiary
+weight as official filings, government releases, or established financial news
+sources.
+
+An intended future `SPECULATIVE` source is politician securities transaction
+data, including data obtained from [StockNest](https://stocknest.app/). StockNest
+integration and politician-specific domain models are outside this milestone.
+
+Future politician transaction records must distinguish these UTC timestamps
+where available:
+
+* `transaction_date`: when the reported securities transaction occurred;
+* `disclosure_date`: when the transaction was officially disclosed;
+* `source_publish_time`: when the source or provider published or exposed the
+  record;
+* `receive_time`: when SRA-Nexus received the information; and
+* `process_time`: when SRA-Nexus made the information usable.
+
+The transaction date is event metadata, not the information-availability time.
+Historical replay must never expose a politician transaction before it was
+publicly disclosed and realistically available through the source, receipt, and
+processing timeline.
 
 ---
 
@@ -2304,7 +2332,7 @@ No SRA logic is required for this first milestone.
 
 Repository scaffold: COMPLETE
 
-Domain models: NOT STARTED
+Domain models: COMPLETE
 
 Aggregator raw ingestion: NOT STARTED
 

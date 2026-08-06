@@ -3,8 +3,7 @@
 from sra_nexus.aggregator.enums import (
     EventState,
     EventType,
-    ExposurePath,
-    ExposureRelationship,
+    ExposureRelationType,
     NewsSourceType,
 )
 from sra_nexus.aggregator.events import CanonicalEvent, EventExposure
@@ -16,8 +15,7 @@ __all__ = [
     "EventExposure",
     "EventState",
     "EventType",
-    "ExposurePath",
-    "ExposureRelationship",
+    "ExposureRelationType",
     "NewsSourceType",
     "NewsState",
     "RawNewsItem",

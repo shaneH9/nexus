@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from math import isfinite
 from types import MappingProxyType
 from typing import Annotated, cast
@@ -13,7 +13,6 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
-    StringConstraints,
     model_validator,
 )
 
@@ -30,8 +29,6 @@ def _require_utc(value: datetime) -> datetime:
     offset = value.utcoffset()
     if offset is None:
         raise ValueError("datetime must be timezone-aware")
-    if offset != timedelta(0):
-        raise ValueError("datetime must use UTC")
     return value.astimezone(UTC)
 
 
@@ -96,26 +93,6 @@ UnitIntervalScore = Annotated[
 NonNegativeFiniteFloat = Annotated[
     float,
     Field(ge=0.0, description="Finite dimensionless value greater than or equal to zero."),
-]
-CountryCode = Annotated[
-    str,
-    StringConstraints(pattern=r"^[A-Z]{2}$"),
-]
-CurrencyCode = Annotated[
-    str,
-    StringConstraints(pattern=r"^[A-Z]{3}$"),
-]
-LanguageTag = Annotated[
-    str,
-    StringConstraints(pattern=r"^[a-z]{2,3}(?:-[A-Z][a-z]{3})?(?:-[A-Z]{2}|-[0-9]{3})?$"),
-]
-Sha256Hex = Annotated[
-    str,
-    StringConstraints(pattern=r"^[0-9a-fA-F]{64}$"),
-]
-EventSubtype = Annotated[
-    str,
-    StringConstraints(pattern=r"^[A-Z][A-Z0-9_]*\.[A-Z][A-Z0-9_]*$"),
 ]
 
 

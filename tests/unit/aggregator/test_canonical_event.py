@@ -1,64 +1,105 @@
 """Tests for the provider-neutral canonical-event contract."""
 
-from datetime import UTC, datetime, timedelta
-from uuid import uuid4
+from datetime import UTC, datetime, timedelta, timezone
 
 import pytest
 from pydantic import ValidationError
 
 from sra_nexus.aggregator import CanonicalEvent, EventState, EventType
-from sra_nexus.common import EntityId, InstrumentId, NewsId
+from sra_nexus.common import CanonicalEventId, EntityId, InstrumentId, NewsId
 
 
 def _canonical_event(**overrides: object) -> CanonicalEvent:
     data: dict[str, object] = {
-        "event_time": datetime(2026, 2, 3, 14, 0, tzinfo=UTC),
-        "receive_time": datetime(2026, 2, 3, 14, 0, 1, tzinfo=UTC),
-        "process_time": datetime(2026, 2, 3, 14, 0, 2, tzinfo=UTC),
+        "first_event_time": datetime(2026, 2, 3, 14, 0, tzinfo=UTC),
+        "first_receive_time": datetime(2026, 2, 3, 14, 0, 1, tzinfo=UTC),
+        "last_update_time": datetime(2026, 2, 3, 14, 0, 2, tzinfo=UTC),
         "event_type": EventType.COMPANY,
-        "event_subtype": "COMPANY.EARNINGS",
+        "event_subtype": "earnings.release",
         "headline_summary": "Example Corp reports earnings",
-        "event_summary": "Example Corp released quarterly results.",
-        "source_news_ids": (NewsId(uuid4()), NewsId(uuid4())),
-        "entity_ids": (EntityId(uuid4()),),
-        "instrument_ids": (InstrumentId(uuid4()),),
-        "sectors": ("Technology",),
-        "industries": ("Software",),
-        "countries": ("US",),
-        "sentiment": 0.25,
-        "surprise": 1.5,
-        "novelty": 0.8,
-        "severity": 0.7,
-        "relevance": 0.9,
-        "confidence": 0.85,
-        "credibility": 0.95,
-        "expected_duration": timedelta(hours=4),
-        "event_state": EventState.CONFIRMED,
+        "event_summary": None,
+        "source_news_ids": [NewsId.new()],
+        "entity_ids": [EntityId.new()],
+        "instrument_ids": [InstrumentId.new()],
+        "sectors": ["Technology"],
+        "industries": ["Software"],
+        "countries": ["US"],
+        "commodities": [],
+        "macro_factors": [],
+        "sentiment": None,
+        "surprise": None,
+        "novelty": None,
+        "severity": None,
+        "relevance": None,
+        "confidence": None,
+        "credibility": None,
+        "expected_duration_seconds": None,
+        "event_state": EventState.NEW,
     }
     data.update(overrides)
     return CanonicalEvent.model_validate(data)
 
 
-def test_canonical_event_creation_preserves_source_news_ids() -> None:
-    """Canonical events should retain ordered provenance to every raw item."""
-    source_ids = (NewsId(uuid4()), NewsId(uuid4()))
+def test_canonical_event_valid_creation_with_optional_scores() -> None:
+    """Canonical events may exist before any derived score has been calculated."""
+    event = _canonical_event()
 
-    event = _canonical_event(source_news_ids=source_ids)
-
-    assert event.source_news_ids == source_ids
-    assert event.event_type is EventType.COMPANY
-    assert event.event_state is EventState.CONFIRMED
+    assert isinstance(event.event_id, CanonicalEventId)
+    assert event.sentiment is None
+    assert event.event_summary is None
 
 
-@pytest.mark.parametrize("event_type", list(EventType))
-def test_canonical_event_supports_every_top_level_event_type(event_type: EventType) -> None:
-    """The initial architecture taxonomy should be fully represented by enums."""
-    event = _canonical_event(
-        event_type=event_type,
-        event_subtype=f"{event_type.value}.TEST",
-    )
+def test_event_enums_match_milestone_taxonomy() -> None:
+    """Canonical event category and lifecycle enums should remain stable."""
+    assert {member.value for member in EventType} == {
+        "COMPANY",
+        "SECTOR",
+        "MACRO",
+        "GEOPOLITICAL",
+        "REGULATORY",
+        "MARKET_STRUCTURE",
+        "SYSTEMIC",
+        "COMMODITY",
+        "CURRENCY",
+        "RATE",
+    }
+    assert {member.value for member in EventState} == {
+        "NEW",
+        "DEVELOPING",
+        "CONFIRMED",
+        "UPDATED",
+        "RESOLVED",
+        "RETRACTED",
+    }
 
-    assert event.event_type is event_type
+
+@pytest.mark.parametrize("field_name", ["headline_summary", "event_subtype"])
+def test_canonical_event_rejects_blank_validated_text(field_name: str) -> None:
+    """Required summaries and supplied subtypes must not be blank."""
+    with pytest.raises(ValidationError):
+        _canonical_event(**{field_name: "   "})
+
+
+@pytest.mark.parametrize(
+    ("field_name", "boundary"),
+    [
+        ("sentiment", -1.0),
+        ("sentiment", 1.0),
+        ("novelty", 0.0),
+        ("novelty", 1.0),
+        ("severity", 0.0),
+        ("severity", 1.0),
+        ("relevance", 0.0),
+        ("relevance", 1.0),
+        ("confidence", 0.0),
+        ("confidence", 1.0),
+        ("credibility", 0.0),
+        ("credibility", 1.0),
+    ],
+)
+def test_canonical_event_accepts_score_boundaries(field_name: str, boundary: float) -> None:
+    """Closed score intervals should accept both documented endpoints."""
+    assert getattr(_canonical_event(**{field_name: boundary}), field_name) == boundary
 
 
 @pytest.mark.parametrize(
@@ -76,64 +117,115 @@ def test_canonical_event_supports_every_top_level_event_type(event_type: EventTy
         ("confidence", 1.01),
         ("credibility", -0.01),
         ("credibility", 1.01),
-        ("surprise", float("inf")),
     ],
 )
-def test_canonical_event_rejects_scores_outside_allowed_ranges(
+def test_canonical_event_rejects_scores_outside_ranges(
     field_name: str,
     value: float,
 ) -> None:
-    """Event scores must remain finite and within their documented intervals."""
+    """Bounded scores outside their documented intervals are invalid."""
     with pytest.raises(ValidationError):
         _canonical_event(**{field_name: value})
 
 
-def test_canonical_event_schema_documents_score_ranges() -> None:
-    """Generated schemas should expose score bounds to contract consumers."""
-    properties = CanonicalEvent.model_json_schema()["properties"]
-
-    assert properties["sentiment"]["minimum"] == -1.0
-    assert properties["sentiment"]["maximum"] == 1.0
-    for field_name in ("novelty", "severity", "relevance", "confidence", "credibility"):
-        assert properties[field_name]["minimum"] == 0.0
-        assert properties[field_name]["maximum"] == 1.0
-        assert properties[field_name]["description"]
-
-
-def test_canonical_event_rejects_mismatched_subtype() -> None:
-    """A namespaced subtype must belong to its selected top-level category."""
-    with pytest.raises(ValidationError, match="prefix must match"):
-        _canonical_event(event_type=EventType.MACRO, event_subtype="COMPANY.EARNINGS")
+@pytest.mark.parametrize("surprise", [-4.5, 3.25])
+def test_canonical_event_allows_unbounded_finite_surprise(surprise: float) -> None:
+    """Surprise may hold raw values or standardized scores outside [-1, 1]."""
+    assert _canonical_event(surprise=surprise).surprise == surprise
 
 
 @pytest.mark.parametrize(
-    ("field_name", "value"),
+    ("first_event_time", "first_receive_time", "last_update_time"),
     [
-        ("source_news_ids", (NewsId(uuid4()),) * 2),
-        ("entity_ids", (EntityId(uuid4()),) * 2),
-        ("instrument_ids", (InstrumentId(uuid4()),) * 2),
-        ("countries", ("US", "US")),
+        (
+            datetime(2026, 2, 3, 14, 0, 2, tzinfo=UTC),
+            datetime(2026, 2, 3, 14, 0, 1, tzinfo=UTC),
+            datetime(2026, 2, 3, 14, 0, 3, tzinfo=UTC),
+        ),
+        (
+            datetime(2026, 2, 3, 14, 0, tzinfo=UTC),
+            datetime(2026, 2, 3, 14, 0, 3, tzinfo=UTC),
+            datetime(2026, 2, 3, 14, 0, 2, tzinfo=UTC),
+        ),
     ],
 )
-def test_canonical_event_rejects_duplicate_references(field_name: str, value: object) -> None:
-    """Canonical reference collections should not contain duplicate identifiers."""
-    with pytest.raises(ValidationError, match="unique"):
-        _canonical_event(**{field_name: value})
+def test_canonical_event_rejects_invalid_timestamp_order(
+    first_event_time: datetime,
+    first_receive_time: datetime,
+    last_update_time: datetime,
+) -> None:
+    """Canonical event history must preserve causal ordering."""
+    with pytest.raises(ValidationError, match="must not be after"):
+        _canonical_event(
+            first_event_time=first_event_time,
+            first_receive_time=first_receive_time,
+            last_update_time=last_update_time,
+        )
 
 
-def test_canonical_event_requires_source_news_provenance() -> None:
-    """A canonical event must trace back to at least one raw news item."""
+def test_canonical_event_normalizes_aware_timestamps_to_utc() -> None:
+    """Equivalent offset-aware event times should normalize to UTC."""
+    eastern = timezone(timedelta(hours=-5))
+
+    event = _canonical_event(first_event_time=datetime(2026, 2, 3, 9, 0, tzinfo=eastern))
+
+    assert event.first_event_time == datetime(2026, 2, 3, 14, 0, tzinfo=UTC)
+    assert event.first_event_time.tzinfo is UTC
+
+
+@pytest.mark.parametrize(
+    "field_name",
+    ["first_event_time", "first_receive_time", "last_update_time"],
+)
+def test_canonical_event_rejects_naive_timestamps(field_name: str) -> None:
+    """All canonical event timestamps must be timezone-aware."""
+    with pytest.raises(ValidationError, match="timezone-aware"):
+        _canonical_event(**{field_name: datetime(2026, 2, 3, 14, 0)})
+
+
+def test_canonical_event_requires_source_news_id() -> None:
+    """Every canonical event must retain at least one raw-news provenance ID."""
     with pytest.raises(ValidationError):
-        _canonical_event(source_news_ids=())
+        _canonical_event(source_news_ids=[])
 
 
-def test_canonical_event_rejects_provider_specific_extra_fields() -> None:
-    """Provider fields must remain on RawNewsItem.raw_metadata."""
-    with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
-        _canonical_event(provider_payload={"vendor_rank": 2})
+def test_canonical_event_deduplicates_repeated_collection_values() -> None:
+    """Repeated IDs and classification labels should collapse deterministically."""
+    news_id = NewsId.new()
+    entity_id = EntityId.new()
+    instrument_id = InstrumentId.new()
+
+    event = _canonical_event(
+        source_news_ids=[news_id, news_id],
+        entity_ids=[entity_id, entity_id],
+        instrument_ids=[instrument_id, instrument_id],
+        sectors=["Technology", "Technology"],
+    )
+
+    assert event.source_news_ids == (news_id,)
+    assert event.entity_ids == (entity_id,)
+    assert event.instrument_ids == (instrument_id,)
+    assert event.sectors == ("Technology",)
 
 
-def test_canonical_event_rejects_non_positive_duration() -> None:
-    """Expected event duration must be positive when it is known."""
+@pytest.mark.parametrize("duration", [0.0, 3600.0])
+def test_canonical_event_accepts_non_negative_duration(duration: float) -> None:
+    """Expected duration is measured in seconds and may be zero."""
+    assert (
+        _canonical_event(expected_duration_seconds=duration).expected_duration_seconds == duration
+    )
+
+
+def test_canonical_event_rejects_negative_duration() -> None:
+    """An expected event duration cannot be negative."""
     with pytest.raises(ValidationError):
-        _canonical_event(expected_duration=timedelta(0))
+        _canonical_event(expected_duration_seconds=-0.01)
+
+
+def test_canonical_event_serializes_to_json_compatible_values() -> None:
+    """Canonical contracts should serialize IDs and timestamps without adapters."""
+    payload = _canonical_event().model_dump(mode="json")
+
+    assert isinstance(payload["event_id"], str)
+    assert isinstance(payload["source_news_ids"][0], str)
+    assert payload["first_event_time"].endswith("Z")

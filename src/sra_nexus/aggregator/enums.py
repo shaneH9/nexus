@@ -15,6 +15,8 @@ class NewsSourceType(StrEnum):
     GOVERNMENT = "GOVERNMENT"
     GLOBAL_NEWS = "GLOBAL_NEWS"
     SOCIAL = "SOCIAL"
+    SPECULATIVE = "SPECULATIVE"
+    OTHER = "OTHER"
 
 
 class EventType(StrEnum):
@@ -43,7 +45,7 @@ class EventState(StrEnum):
     RETRACTED = "RETRACTED"
 
 
-class ExposureRelationship(StrEnum):
+class ExposureRelationType(StrEnum):
     """How an event is related to an exposed instrument."""
 
     DIRECT_COMPANY = "DIRECT_COMPANY"
@@ -56,10 +58,4 @@ class ExposureRelationship(StrEnum):
     COMMODITY = "COMMODITY"
     MACRO = "MACRO"
     REGULATORY = "REGULATORY"
-
-
-class ExposurePath(StrEnum):
-    """Whether an instrument exposure is direct or propagated indirectly."""
-
-    DIRECT = "DIRECT"
-    INDIRECT = "INDIRECT"
+    OTHER = "OTHER"

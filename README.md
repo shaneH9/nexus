@@ -48,6 +48,7 @@ python -m pip install -e '.[dev]'
 python -m pytest
 python -m ruff check .
 python -m ruff format --check .
+python -m mypy src tests
 ```
 
 See `AGENTS.md` for the full architectural, timing, data, safety, and engineering

@@ -404,9 +404,16 @@ Always:
 2. Read `docs/architecture.md` for relevant system definitions.
 3. Preserve module boundaries.
 4. Add or update tests.
-5. Run tests.
-6. Run Ruff.
-7. Report assumptions and unresolved issues.
-8. Do not silently change mathematical definitions in `architecture.md`.
+5. Run the standard development checks:
+
+```bash
+python -m pytest
+python -m ruff check .
+python -m ruff format --check .
+python -m mypy src tests
+```
+
+6. Report assumptions and unresolved issues.
+7. Do not silently change mathematical definitions in `docs/architecture.md`.
 
 If implementation reveals that the architecture should change, propose the change explicitly rather than quietly diverging from the specification.

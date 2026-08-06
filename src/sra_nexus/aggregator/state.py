@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-from pydantic import Field, model_validator
+from pydantic import Field, field_validator, model_validator
 
-from sra_nexus.aggregator.enums import ExposurePath
 from sra_nexus.aggregator.events import EventExposure
 from sra_nexus.common.models import (
     ContractModel,
@@ -12,7 +11,7 @@ from sra_nexus.common.models import (
     UnitIntervalScore,
     UtcDatetime,
 )
-from sra_nexus.common.types import EventId, InstrumentId
+from sra_nexus.common.types import CanonicalEventId, InstrumentId
 
 
 class NewsState(ContractModel):
@@ -46,41 +45,30 @@ class NewsState(ContractModel):
         default=0.0,
         description="Aggregate state confidence in [0, 1].",
     )
-    active_event_ids: tuple[EventId, ...] = ()
+    active_event_ids: tuple[CanonicalEventId, ...] = ()
     direct_event_exposures: tuple[EventExposure, ...] = ()
     indirect_event_exposures: tuple[EventExposure, ...] = ()
 
+    @field_validator("active_event_ids", mode="after")
+    @classmethod
+    def deduplicate_active_events(
+        cls, value: tuple[CanonicalEventId, ...]
+    ) -> tuple[CanonicalEventId, ...]:
+        """Remove duplicate active events while preserving their order."""
+        return tuple(dict.fromkeys(value))
+
     @model_validator(mode="after")
-    def validate_state_references(self) -> NewsState:
-        """Reject future, cross-instrument, or misclassified exposures."""
-        if len(self.active_event_ids) != len(set(self.active_event_ids)):
-            raise ValueError("active_event_ids must be unique")
-
-        all_exposures = self.direct_event_exposures + self.indirect_event_exposures
-        exposure_ids = [exposure.exposure_id for exposure in all_exposures]
-        if len(exposure_ids) != len(set(exposure_ids)):
-            raise ValueError("event exposures must be unique")
-
-        active_event_ids = set(self.active_event_ids)
+    def validate_exposure_groups(self) -> NewsState:
+        """Reject cross-instrument or incorrectly classified exposures."""
         for exposure in self.direct_event_exposures:
-            self._validate_exposure(exposure, ExposurePath.DIRECT, active_event_ids)
+            self._validate_exposure(exposure, expected_direct=True)
         for exposure in self.indirect_event_exposures:
-            self._validate_exposure(exposure, ExposurePath.INDIRECT, active_event_ids)
+            self._validate_exposure(exposure, expected_direct=False)
         return self
 
-    def _validate_exposure(
-        self,
-        exposure: EventExposure,
-        expected_path: ExposurePath,
-        active_event_ids: set[EventId],
-    ) -> None:
+    def _validate_exposure(self, exposure: EventExposure, *, expected_direct: bool) -> None:
         if exposure.instrument_id != self.instrument_id:
             raise ValueError("event exposure instrument_id must match NewsState")
-        if exposure.exposure_path is not expected_path:
-            raise ValueError(
-                f"{expected_path.value.lower()} exposures have the wrong exposure_path"
-            )
-        if exposure.event_id not in active_event_ids:
-            raise ValueError("event exposure must reference an active event")
-        if exposure.process_time > self.as_of:
-            raise ValueError("NewsState cannot contain exposure unavailable at as_of")
+        if exposure.is_direct is not expected_direct:
+            group = "direct" if expected_direct else "indirect"
+            raise ValueError(f"{group} exposures have the wrong is_direct value")

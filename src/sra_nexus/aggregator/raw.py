@@ -2,14 +2,12 @@
 
 from __future__ import annotations
 
-from pydantic import Field, HttpUrl, field_serializer, field_validator, model_validator
+from pydantic import Field, field_serializer, field_validator
 
 from sra_nexus.aggregator.enums import NewsSourceType
 from sra_nexus.common.models import (
     ImmutableJsonObject,
-    LanguageTag,
     NonBlankStr,
-    Sha256Hex,
     TimedEventModel,
     freeze_json_object,
     thaw_json_object,
@@ -23,18 +21,38 @@ class RawNewsItem(TimedEventModel):
     news_id: NewsId = Field(default_factory=new_news_id)
     source: NonBlankStr = Field(description="Provider name or source identifier.")
     source_type: NewsSourceType
-    provider_item_id: NonBlankStr
+    provider_item_id: NonBlankStr | None = None
     headline: NonBlankStr
     body: str | None = None
-    url: HttpUrl | None = None
+    url: str | None = None
     provider_tickers: tuple[NonBlankStr, ...] = ()
     provider_entities: tuple[NonBlankStr, ...] = ()
-    language: LanguageTag
+    language: str | None = None
     raw_metadata: ImmutableJsonObject = Field(
         default_factory=dict,
         description="Recursively immutable provider-specific JSON fields.",
     )
-    content_hash: Sha256Hex = Field(description="SHA-256 content digest as 64 hexadecimal digits.")
+    content_hash: NonBlankStr = Field(description="Opaque deterministic content digest.")
+
+    @field_validator("provider_tickers", mode="before")
+    @classmethod
+    def normalize_provider_tickers(cls, value: object) -> object:
+        """Trim, uppercase, and deduplicate provider ticker metadata."""
+        if not isinstance(value, (list, tuple)):
+            raise ValueError("provider_tickers must be a collection of strings")
+
+        normalized: list[str] = []
+        seen: set[str] = set()
+        for ticker in value:
+            if not isinstance(ticker, str):
+                raise ValueError("provider_tickers must contain only strings")
+            uppercase_ticker = ticker.strip().upper()
+            if not uppercase_ticker:
+                raise ValueError("provider_tickers must not contain blank values")
+            if uppercase_ticker not in seen:
+                normalized.append(uppercase_ticker)
+                seen.add(uppercase_ticker)
+        return tuple(normalized)
 
     @field_validator("raw_metadata", mode="after")
     @classmethod
@@ -46,12 +64,3 @@ class RawNewsItem(TimedEventModel):
     def serialize_raw_metadata(self, value: ImmutableJsonObject) -> dict[str, object]:
         """Emit JSON metadata without exposing the stored immutable mappings."""
         return thaw_json_object(value)
-
-    @model_validator(mode="after")
-    def validate_provider_references(self) -> RawNewsItem:
-        """Reject duplicate provider symbols or entity labels."""
-        if len(self.provider_tickers) != len(set(self.provider_tickers)):
-            raise ValueError("provider_tickers must be unique")
-        if len(self.provider_entities) != len(set(self.provider_entities)):
-            raise ValueError("provider_entities must be unique")
-        return self

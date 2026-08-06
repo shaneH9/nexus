@@ -4,12 +4,10 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from pydantic import Field, field_serializer, field_validator, model_validator
+from pydantic import Field, field_serializer, field_validator
 
 from sra_nexus.common.models import (
     ContractModel,
-    CountryCode,
-    CurrencyCode,
     ImmutableJsonObject,
     NonBlankStr,
     freeze_json_object,
@@ -26,12 +24,36 @@ class Instrument(ContractModel):
     ticker: NonBlankStr = Field(description="Display ticker; never a primary internal key.")
     exchange: NonBlankStr = Field(description="Exchange or venue identifier.")
     asset_type: AssetType
-    currency: CurrencyCode = Field(description="ISO 4217 currency code.")
+    currency: NonBlankStr = Field(description="Uppercase currency identifier.")
     sector: NonBlankStr | None = None
     industry: NonBlankStr | None = None
-    country: CountryCode | None = Field(default=None, description="ISO 3166-1 alpha-2 code.")
-    tick_size: Decimal = Field(gt=0, description="Minimum price increment in currency units.")
-    lot_size: Decimal = Field(gt=0, description="Minimum tradable quantity in instrument units.")
+    country: NonBlankStr | None = None
+    tick_size: Decimal | None = Field(
+        default=None,
+        gt=0,
+        description="Optional minimum price increment in currency units.",
+    )
+    lot_size: Decimal | None = Field(
+        default=None,
+        gt=0,
+        description="Optional minimum tradable quantity in instrument units.",
+    )
+
+    @field_validator("ticker", "currency", mode="before")
+    @classmethod
+    def normalize_uppercase_fields(cls, value: object) -> object:
+        """Trim and uppercase ticker and currency metadata."""
+        if isinstance(value, str):
+            return value.strip().upper()
+        return value
+
+    @field_validator("exchange", mode="before")
+    @classmethod
+    def normalize_exchange(cls, value: object) -> object:
+        """Trim surrounding whitespace from the venue identifier."""
+        if isinstance(value, str):
+            return value.strip()
+        return value
 
 
 class Entity(ContractModel):
@@ -57,10 +79,22 @@ class Entity(ContractModel):
         """Emit canonical metadata as an independent JSON object."""
         return thaw_json_object(value)
 
-    @model_validator(mode="after")
-    def validate_aliases(self) -> Entity:
-        """Reject aliases that repeat under case-insensitive comparison."""
-        normalized = [alias.casefold() for alias in self.aliases]
-        if len(normalized) != len(set(normalized)):
-            raise ValueError("aliases must be unique ignoring case")
-        return self
+    @field_validator("aliases", mode="before")
+    @classmethod
+    def normalize_aliases(cls, value: object) -> object:
+        """Trim aliases and remove exact duplicates while preserving order."""
+        if not isinstance(value, (list, tuple)):
+            raise ValueError("aliases must be a collection of strings")
+
+        normalized: list[str] = []
+        seen: set[str] = set()
+        for alias in value:
+            if not isinstance(alias, str):
+                raise ValueError("aliases must contain only strings")
+            stripped = alias.strip()
+            if not stripped:
+                raise ValueError("aliases must not contain blank values")
+            if stripped not in seen:
+                normalized.append(stripped)
+                seen.add(stripped)
+        return tuple(normalized)
