@@ -93,6 +93,14 @@ class _FailingRepository:
         """Return no record; this method is unused in the test."""
         return None
 
+    def get_many_available_as_of(
+        self,
+        news_ids: tuple[NewsId, ...],
+        as_of: datetime,
+    ) -> tuple[RawNewsItem, ...]:
+        """Return no records; this method is unused in the test."""
+        return ()
+
     def exists_provider_item(self, source: str, provider_item_id: str) -> bool:
         """Return false; this method is unused in the test."""
         return False

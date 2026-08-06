@@ -43,6 +43,14 @@ class RawNewsRepository(Protocol):
         """Return one raw record by internal identifier when present."""
         ...
 
+    def get_many_available_as_of(
+        self,
+        news_ids: tuple[NewsId, ...],
+        as_of: datetime,
+    ) -> tuple[RawNewsItem, ...]:
+        """Return requested records whose process_time permits historical visibility."""
+        ...
+
     def exists_provider_item(self, source: str, provider_item_id: str) -> bool:
         """Return whether a source/provider identifier pair already exists."""
         ...

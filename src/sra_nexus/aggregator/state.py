@@ -8,11 +8,13 @@ from sra_nexus.aggregator.events import EventExposure
 from sra_nexus.common.models import (
     ContractModel,
     FiniteFloat,
+    NonBlankStr,
     NonNegativeFiniteFloat,
     UnitIntervalScore,
     UtcDatetime,
 )
 from sra_nexus.common.types import CanonicalEventId, InstrumentId
+from sra_nexus.reference.enums import ReferenceDataPolicy
 
 
 class NewsState(ContractModel):
@@ -20,6 +22,15 @@ class NewsState(ContractModel):
 
     instrument_id: InstrumentId
     as_of: UtcDatetime = Field(description="UTC information cutoff represented by this state.")
+    event_scoring_version: NonBlankStr = Field(
+        description="Deterministic event-scoring policy version used for this state."
+    )
+    news_state_version: NonBlankStr = Field(
+        description="Deterministic NewsState aggregation policy version."
+    )
+    reference_data_policy: ReferenceDataPolicy = Field(
+        description="Whether upstream reference enrichment is historical or retrospective."
+    )
     positive_event_intensity: NonNegativeFiniteFloat = 0.0
     negative_event_intensity: NonNegativeFiniteFloat = 0.0
     company_event_risk: UnitIntervalScore = 0.0
@@ -35,7 +46,7 @@ class NewsState(ContractModel):
     )
     news_acceleration: FiniteFloat = Field(
         default=0.0,
-        description="Change in news arrival rate, measured in items per minute squared.",
+        description="Recent minus prior relevant-news arrival rate, in items per hour.",
     )
     novelty_intensity: UnitIntervalScore = 0.0
     uncertainty: UnitIntervalScore = Field(

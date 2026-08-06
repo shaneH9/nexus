@@ -75,3 +75,10 @@ class ReferenceResolutionStatus(StrEnum):
     RESOLVED = "RESOLVED"
     AMBIGUOUS = "AMBIGUOUS"
     NOT_FOUND = "NOT_FOUND"
+
+
+class ReferenceDataPolicy(StrEnum):
+    """Declared historical-availability policy for reference-data enrichment."""
+
+    CURRENT_REFERENCE_DATA = "CURRENT_REFERENCE_DATA"
+    HISTORICAL_REFERENCE_DATA = "HISTORICAL_REFERENCE_DATA"

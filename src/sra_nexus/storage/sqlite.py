@@ -106,6 +106,28 @@ class SQLiteRawNewsRepository:
             ).fetchone()
         return None if row is None else _row_to_item(row)
 
+    def get_many_available_as_of(
+        self,
+        news_ids: tuple[NewsId, ...],
+        as_of: datetime,
+    ) -> tuple[RawNewsItem, ...]:
+        """Return an indexed subset gated by process-time availability."""
+        cutoff = _serialize_datetime(normalize_utc_datetime(as_of))
+        unique_ids = tuple(dict.fromkeys(news_ids))
+        if not unique_ids:
+            return ()
+        placeholders = ", ".join("?" for _ in unique_ids)
+        with closing(self._connect()) as connection:
+            rows = connection.execute(
+                f"""
+                SELECT * FROM raw_news
+                WHERE news_id IN ({placeholders}) AND process_time <= ?
+                ORDER BY process_time ASC, news_id ASC
+                """,
+                (*tuple(str(news_id) for news_id in unique_ids), cutoff),
+            ).fetchall()
+        return tuple(_row_to_item(row) for row in rows)
+
     def exists_provider_item(self, source: str, provider_item_id: str) -> bool:
         """Return whether a non-null provider identity already exists."""
         with closing(self._connect()) as connection:

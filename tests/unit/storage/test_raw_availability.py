@@ -117,3 +117,30 @@ def test_equal_process_times_are_ordered_by_news_id(tmp_path: Path) -> None:
     repository.insert(earlier_id)
 
     assert repository.list_available_as_of(process_time) == (earlier_id, later_id)
+
+
+def test_requested_raw_subset_remains_process_time_gated(tmp_path: Path) -> None:
+    """Indexed source-ID lookup must not expose a requested future observation."""
+    repository = _repository(tmp_path)
+    first = _timed_item(
+        news_id="00000000-0000-0000-0000-000000000031",
+        headline="Visible",
+        event_time=datetime(2026, 6, 1, 10, 0, tzinfo=UTC),
+        receive_time=datetime(2026, 6, 1, 10, 0, 1, tzinfo=UTC),
+        process_time=datetime(2026, 6, 1, 10, 0, 2, tzinfo=UTC),
+    )
+    second = _timed_item(
+        news_id="00000000-0000-0000-0000-000000000032",
+        headline="Future",
+        event_time=datetime(2026, 6, 1, 10, 0, tzinfo=UTC),
+        receive_time=datetime(2026, 6, 1, 10, 0, 3, tzinfo=UTC),
+        process_time=datetime(2026, 6, 1, 10, 0, 4, tzinfo=UTC),
+    )
+    repository.insert(first)
+    repository.insert(second)
+
+    assert repository.get_many_available_as_of(
+        (second.news_id, first.news_id, first.news_id),
+        datetime(2026, 6, 1, 10, 0, 3, tzinfo=UTC),
+    ) == (first,)
+    assert repository.get_many_available_as_of((), datetime(2026, 6, 1, tzinfo=UTC)) == ()

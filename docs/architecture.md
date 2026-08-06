@@ -1068,6 +1068,8 @@ Then event intensity for instrument (i) may be represented as:
 
 [
 EI_{i,e}(t)=
+M_{i,e}
+\cdot
 Rel_{i,e}
 \cdot
 Sev_e
@@ -1081,7 +1083,9 @@ Conf_e
 Decay_e(t)
 ]
 
-Directional event intensity:
+where (M_{i,e}) is `EventExposure.magnitude`. Milestone E explicitly includes
+this factor so weaker graph relationships do not receive the same influence as
+direct or stronger relationships. Directional event intensity is:
 
 [
 DEI_{i,e}(t)=EI_{i,e}(t)D_{i,e}
@@ -1155,6 +1159,479 @@ Potential causes of high uncertainty:
 * unresolved major event
 
 High uncertainty should normally increase risk requirements rather than directly determine trade direction.
+
+## Milestone E Deterministic Event Scoring and NewsState Aggregation
+
+Milestone E computes event scores and `NewsState` on demand. These are
+deterministic research features built from initial engineering priors. They are
+not empirically calibrated probabilities and are not trade instructions.
+
+The implementation keeps two focused services:
+
+```text
+EventScoringService
+    exact immutable revision + supplied revision evidence
+    -> auditable EventScore
+
+NewsStateService
+    repository-visible instrument exposures as_of
+    -> exact canonical revision and source observations
+    -> EventScoringService
+    -> decayed instrument NewsState
+```
+
+`EventScoringService` contains no persistence or SQL. `NewsStateService`
+depends on canonical, raw-news, entity-link, and exposure repository protocols,
+not SQLite implementations. `NewsState` is computed on demand in this
+milestone; it is not cached or persisted as a derived snapshot.
+
+### EventScore Contract and Auditability
+
+One immutable revision produces:
+
+```text
+EventScore
+{
+    event_id
+    revision_id
+    revision_number
+    available_at
+
+    sentiment
+    surprise
+    novelty
+    severity
+    credibility
+    confidence
+    uncertainty
+
+    decay_tau_seconds
+    source_news_ids[]
+    source_names[]
+    source_types[]
+
+    scoring_methods[]
+    contributing_factors[]
+    explanations[]
+
+    event_scoring_version
+    reference_data_policy
+}
+```
+
+Every scalar component has one typed method record. Each contributing factor
+retains its finite value, optional weight, rule/configuration reference, and an
+explanation. `surprise=None` has an explicit `UNAVAILABLE` method rather than a
+fabricated zero.
+
+### Central Initial Engineering Priors
+
+All initial parameters are held in immutable typed `EventScoringConfig` and
+`NewsStateConfig` contracts. They are deliberately transparent starting values,
+not fitted trading parameters.
+
+Initial source credibility priors are:
+
+```text
+SEC                 0.96
+GOVERNMENT          0.95
+CENTRAL_BANK        0.95
+COMPANY_RELEASE     0.88
+MACRO_CALENDAR      0.85
+WIRE                0.82
+FINANCIAL_NEWS      0.78
+GLOBAL_NEWS         0.65
+OTHER               0.50
+SPECULATIVE         0.35
+SOCIAL              0.25
+```
+
+These values concern provenance reliability only. They make no political or
+ideological judgment. A `SPECULATIVE` observation participates normally and is
+not presumed false or assigned a direction.
+
+For one highest-prior observation per case-insensitive independent source name,
+credibility is combined as:
+
+[
+Credibility_e=
+1-\prod_s(1-SourcePrior_s)
+]
+
+This allows independent corroboration to increase credibility while keeping the
+result in `[0, 1]`. Repeated observations from the same source name do not count
+as independent corroboration.
+
+Initial event-type severity fallbacks are:
+
+```text
+COMPANY             0.40
+SECTOR              0.50
+MACRO               0.55
+GEOPOLITICAL        0.65
+REGULATORY          0.60
+MARKET_STRUCTURE    0.65
+SYSTEMIC            0.80
+COMMODITY           0.55
+CURRENCY            0.55
+RATE                0.60
+```
+
+More-specific subtype priors override those fallbacks:
+
+```text
+COMPANY.EARNINGS                    0.70
+COMPANY.GUIDANCE                    0.60
+COMPANY.MERGER_ACQUISITION          0.75
+COMPANY.CAPITAL_RAISE               0.65
+COMPANY.BUYBACK                     0.45
+MACRO.CPI                           0.70
+MACRO.JOBS                          0.65
+MACRO.GDP                           0.65
+RATE.CENTRAL_BANK_DECISION          0.75
+GEOPOLITICAL.CONFLICT               0.90
+GEOPOLITICAL.SANCTION               0.80
+REGULATORY.APPROVAL                 0.65
+REGULATORY.ENFORCEMENT              0.75
+SYSTEMIC.BANK_FAILURE               0.95
+SYSTEMIC.EXCHANGE_OUTAGE            0.85
+SYSTEMIC.MARKET_DISRUPTION          0.90
+```
+
+An explicit valid `CanonicalEvent.severity` takes precedence. Exposure
+directness and graph strength remain in `EventExposure.magnitude` and
+`relevance`; they are not duplicated inside the event-level severity prior.
+
+### Sentiment and Surprise
+
+Sentiment uses an explicit canonical value when supplied. Otherwise it reuses
+the deliberately small event-semantics policy from exposure generation:
+
+* buyback authorization is positive;
+* dividend suspension, cancellation, or reduction is negative;
+* explicit regulatory approval is positive;
+* explicit regulatory rejection or denial is negative;
+* sanctions are negative; and
+* everything else, including generic earnings prose, is zero/unknown.
+
+This is not word-count sentiment or a predicted return direction. Instrument
+directional intensity always uses `EventExposure.direction`, not event
+sentiment.
+
+An explicit finite `CanonicalEvent.surprise` is preserved. Missing expectations,
+consensus, or normalization scales are never invented, so surprise remains
+`None` when structured data does not supply it.
+
+### Revision-Aware Novelty
+
+First-revision novelty starts at the configured value `1.0`. Later revisions
+compare only with the immediately preceding immutable revision:
+
+[
+Novelty_e=
+0.40TokenDelta+
+0.10NewSourceFraction+
+0.15NewEntityFraction+
+0.15NewInstrumentFraction+
+0.20OfficialConfirmationDelta
+]
+
+`TokenDelta` is one minus Jaccard similarity over deterministic normalized
+headline tokens. The source, entity, and instrument factors are the fraction of
+current distinct identities newly added since the prior revision. The official
+factor is one only when the revision newly enters confirmed state with an
+applicable company, SEC, government, or central-bank source. Thus a repeat from
+one additional source is low-novelty while new facts, links, exposures, or
+official confirmation can be materially higher. No embedding or statistical
+NLP is used.
+
+### Confidence and Event Uncertainty
+
+Confidence means confidence in the structured interpretation, not probability
+that price rises. Its exact convex formula is:
+
+[
+Conf_e=
+0.30Credibility+
+0.15Corroboration+
+0.20ClassifierConfidence+
+0.15MeanEntityLinkConfidence+
+0.15MeanExposureConfidence+
+0.05OfficialConfirmation
+]
+
+where:
+
+[
+Corroboration=
+min(max(IndependentSourceCount-1,0)/2,1)
+]
+
+Missing entity-link or exposure evidence contributes zero to the corresponding
+factor. Official confirmation is one only for `CONFIRMED` state with an
+applicable official source.
+
+Event uncertainty is independent of `1 - confidence`. The lifecycle factors
+are:
+
+```text
+NEW          0.80
+DEVELOPING  0.70
+UPDATED      0.50
+CONFIRMED    0.15
+RESOLVED     0.10
+RETRACTED    1.00
+```
+
+The following `(weight, factor)` causes are combined:
+
+```text
+event lifecycle state                0.35
+source-credibility dispersion        0.15
+SPECULATIVE-only provenance          0.25
+lack of applicable confirmation      0.15
+unresolved explicit provider refs    0.20
+entity-link confidence deficit       0.10
+exposure direction conflict          0.30
+```
+
+Explicit provider reference evidence is deduplicated before comparing it with
+resolved provider-based links. Direction conflict includes stored multi-path
+conflict or opposing known exposure signs. If each factor is (f_k) and its
+weight is (w_k), the exact formula is:
+
+[
+Uncertainty_e=
+1-\prod_k(1-w_kf_k)
+]
+
+This lets multiple causes accumulate without a naive average making a serious
+uncertainty disappear.
+
+### Time Decay and Active Events
+
+For `as_of >= available_at`, elapsed time and tau are measured in seconds:
+
+[
+Decay_e(t)=
+exp(-(t-available_at_e)/\tau_e)
+]
+
+Scoring before availability is rejected. Initial type fallback taus are:
+
+```text
+COMPANY              6 hours
+SECTOR              12 hours
+MACRO                6 hours
+GEOPOLITICAL        48 hours
+REGULATORY          24 hours
+MARKET_STRUCTURE     4 hours
+SYSTEMIC            48 hours
+COMMODITY           24 hours
+CURRENCY            12 hours
+RATE                12 hours
+```
+
+Initial subtype overrides are:
+
+```text
+COMPANY.EARNINGS                    12 hours
+COMPANY.MERGER_ACQUISITION          72 hours
+COMPANY.BUYBACK                     24 hours
+MACRO.CPI                           12 hours
+RATE.CENTRAL_BANK_DECISION          24 hours
+GEOPOLITICAL.CONFLICT               96 hours
+GEOPOLITICAL.SANCTION               72 hours
+SYSTEMIC.BANK_FAILURE               96 hours
+```
+
+An event is active for an instrument exactly when:
+
+1. the latest processed exposure revision visible by `as_of` exists for that
+   instrument;
+2. its exact canonical revision, entity links, exposure snapshot, and source
+   observations are available;
+3. its state is not `RETRACTED`; and
+4. its decay is at least the configured `minimum_active_influence`, initially
+   `0.01`.
+
+`RESOLVED` revisions remain eligible with their lower lifecycle uncertainty
+until decay falls below the same threshold. If both direct and indirect
+materializations exist for the same event/instrument, all remain visible in the
+state contract but direct evidence takes precedence for one event's aggregate
+intensity and risk contribution. Otherwise the strongest indirect record is
+used.
+
+When a `RETRACTED` revision becomes available it replaces the earlier revision
+for later historical queries and contributes no ordinary intensity, risk,
+volume, or active exposure. Queries before retraction continue to reconstruct
+the earlier revision unchanged. A separate future correction/retraction-risk
+feature may be added only with an explicit policy; this milestone does not
+silently reinterpret a retraction as a new trading direction.
+
+### Instrument Aggregation Formulas
+
+For the effective instrument exposure, Milestone E uses:
+
+[
+EI_{i,e}(t)=
+Magnitude_{i,e}
+\cdot Relevance_{i,e}
+\cdot Severity_e
+\cdot Novelty_e
+\cdot Credibility_e
+\cdot Confidence_e
+\cdot Decay_e(t)
+]
+
+[
+DEI_{i,e}(t)=EI_{i,e}(t)Direction_{i,e}
+]
+
+Unknown direction is zero. Positive and negative aggregate intensity are
+unbounded non-negative sums:
+
+[
+PositiveIntensity_i=\sum_e max(DEI_{i,e},0)
+]
+
+[
+NegativeIntensity_i=\sum_e |min(DEI_{i,e},0)|
+]
+
+Event sentiment never overrides the exposure direction.
+
+For each event, direction-independent risk is:
+
+[
+EvidenceFactor_e=0.5+0.25Credibility_e+0.25Confidence_e
+]
+
+[
+UncertaintyFactor_e=0.5+0.5Uncertainty_e
+]
+
+[
+RiskContribution_{i,e}=
+Magnitude_{i,e}
+\cdot Relevance_{i,e}
+\cdot Severity_e
+\cdot Decay_e
+\cdot EvidenceFactor_e
+\cdot UncertaintyFactor_e
+]
+
+Company, sector, macro, geopolitical, regulatory, and systemic risk fields each
+combine their applicable contributions as:
+
+[
+CombinedRisk=1-\prod_e(1-RiskContribution_{i,e})
+]
+
+Rate, currency, and commodity events currently map to macro event risk;
+market-structure events map to systemic event risk. The mapping is explicit and
+does not collapse direction into risk.
+
+News volume is the count of unique source `NewsId` values belonging to active
+relevant revisions with `process_time` in the half-open/lower, closed/upper
+window `(as_of - 24 hours, as_of]`. It counts raw observations, not revisions or
+canonical events.
+
+Acceleration uses a 15-minute recent window and the immediately preceding
+60-minute prior window:
+
+[
+RecentRate=RecentUniqueCount\cdot3600/900
+]
+
+[
+PriorRate=PriorUniqueCount\cdot3600/3600
+]
+
+[
+NewsAcceleration=RecentRate-PriorRate
+]
+
+The exact units are items per hour. The boundary item at the recent-window
+start belongs to the prior window, so an item cannot be counted twice.
+
+Novelty intensity combines:
+
+[
+NoveltyContribution_{i,e}=
+Novelty_e\cdot Magnitude_{i,e}\cdot Relevance_{i,e}\cdot Decay_e
+]
+
+[
+NoveltyIntensity_i=1-\prod_e(1-NoveltyContribution_{i,e})
+]
+
+Instrument uncertainty first forms each event contribution as:
+
+[
+EventUncertaintyContribution_{i,e}=
+Uncertainty_e\cdot Magnitude_{i,e}\cdot Relevance_{i,e}\cdot Decay_e
+]
+
+It combines those contributions with the same bounded-union formula. If active
+events contain both known positive and known negative exposure directions, a
+configured `0.35` contradiction contribution is included in that union.
+
+Instrument confidence is the weighted mean of event confidence with:
+
+[
+ConfidenceWeight_{i,e}=Magnitude_{i,e}\cdot Relevance_{i,e}\cdot Decay_e
+]
+
+No active evidence yields confidence zero. The complete no-event state has zero
+intensity, risks, volume, acceleration, novelty, uncertainty, and confidence,
+with empty event and exposure collections.
+
+### Historical and Reference-Data Safety
+
+The instrument exposure query selects only the latest processed exposure
+revision per event with `available_at <= as_of`. `NewsStateService` then loads
+that exact canonical revision number and revision ID, exact revision-specific
+entity links and exposures, and only the revision's source `NewsId` records with
+`process_time <= as_of`. Missing or cross-revision evidence is an error. It does
+not fall back to a current canonical event or scan all current news.
+
+Entity aliases and some mapping knowledge are not yet independently versioned
+by an information-availability timestamp. Therefore every `EventScore` and
+`NewsState` exposes one of:
+
+```text
+CURRENT_REFERENCE_DATA
+HISTORICAL_REFERENCE_DATA
+```
+
+`CURRENT_REFERENCE_DATA` explicitly declares retrospective enrichment and must
+not be represented as knowledge available historically. The scoring and state
+service policies must match. `HISTORICAL_REFERENCE_DATA` declares that upstream
+event links/exposures were constructed from a timestamp-safe snapshot or
+availability-versioned repository. The service exposes this declaration but
+does not pretend it can prove independently versioned aliases exist.
+
+Long-term historical replay must use either reference mappings with
+`valid_from`, `valid_to`, and `available_at`, or immutable reference-data
+snapshots selected by `as_of`. Present-day aliases must never be silently
+treated as historically known.
+
+Event scoring and state aggregation expose simple policy versions:
+
+```text
+event-scoring-v1
+news-state-v1
+```
+
+Changing formulas or priors requires a new version. The current reference-data
+policy is retained alongside those versions so retrospective research remains
+identifiable and reproducible.
+
+`NewsState` remains contextual input alongside future `SRAState` and
+`MarketRegime`. None of the formulas above emits `BUY`, `SELL`, an order, or a
+position size. See
+[ADR 0004](decisions/0004-deterministic-event-scoring-news-state.md).
 
 ---
 
@@ -2720,7 +3197,10 @@ src/sra_nexus/
         surprise.py
         event_graph.py
         decay.py
+        scoring_math.py
+        scoring.py
         state.py
+        news_state_service.py
 
     market_data/
         ingestion.py
@@ -2998,7 +3478,9 @@ Entity linking: COMPLETE
 
 Event exposure graph: COMPLETE
 
-NewsState: NOT STARTED
+Deterministic event scoring: COMPLETE
+
+NewsState: COMPLETE
 
 Market-data ingestion: NOT STARTED
 

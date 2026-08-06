@@ -7,6 +7,7 @@ from pydantic import ValidationError
 
 from sra_nexus.aggregator import EventExposure, ExposureRelationType, NewsState
 from sra_nexus.common import CanonicalEventId, InstrumentId
+from sra_nexus.reference import ReferenceDataPolicy
 
 AS_OF = datetime(2026, 4, 5, 13, 0, tzinfo=UTC)
 
@@ -31,6 +32,9 @@ def _news_state(**overrides: object) -> NewsState:
     data: dict[str, object] = {
         "instrument_id": instrument_id,
         "as_of": AS_OF,
+        "event_scoring_version": "event-scoring-test",
+        "news_state_version": "news-state-test",
+        "reference_data_policy": ReferenceDataPolicy.CURRENT_REFERENCE_DATA,
         "positive_event_intensity": 1.2,
         "negative_event_intensity": 0.4,
         "company_event_risk": 0.7,

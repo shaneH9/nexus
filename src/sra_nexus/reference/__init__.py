@@ -5,6 +5,7 @@ from sra_nexus.reference.enums import (
     EntityInstrumentRelationType,
     EntityRelationshipType,
     EntityType,
+    ReferenceDataPolicy,
     ReferenceResolutionStatus,
     RelationshipDirection,
 )
@@ -30,6 +31,7 @@ __all__ = [
     "Instrument",
     "InstrumentRepository",
     "InstrumentResolution",
+    "ReferenceDataPolicy",
     "ReferenceResolutionStatus",
     "RelationshipDirection",
     "RelationshipRepository",
