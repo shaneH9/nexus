@@ -37,6 +37,12 @@ def test_mock_source_satisfies_protocol_and_sorts_out_of_order_payload() -> None
     assert book_sequences == [100, 101, 102, 103]
     assert trade_sequences == [200, 201, 202]
     assert quote_sequences == [300]
+    assert {event.sequence_stream_id.root for event in events if isinstance(event, BookEvent)} == {
+        "book-primary"
+    }
+    assert {event.sequence_stream_id.root for event in events if isinstance(event, TradeEvent)} == {
+        "trade-primary"
+    }
 
 
 def test_mock_source_reads_jsonl_provider_records() -> None:
@@ -46,6 +52,7 @@ def test_mock_source_reads_jsonl_provider_records() -> None:
     assert len(events) == 1
     event = events[0]
     assert isinstance(event, TradeEvent)
+    assert event.trade_id is not None
     assert event.trade_id.root == "jsonl-trade"
     assert event.aggressor_side is AggressorSide.UNKNOWN
 

@@ -1644,8 +1644,8 @@ than one vendor-shaped message:
 MarketEvent = BookEvent | TradeEvent | QuoteEvent
 ```
 
-Every variant identifies `instrument_id`, `venue`, `sequence_number`, and the
-three causal timestamps:
+Every variant identifies `instrument_id`, `venue`, an explicit
+`sequence_stream_id`, `sequence_number`, and the three causal timestamps:
 
 ```text
 exchange_time <= receive_time <= process_time
@@ -1669,11 +1669,11 @@ positive for `ADD`, `MODIFY`, `CANCEL`, and `EXECUTE`; `DELETE` requires no
 quantity; and `RESET` contains no order or level fields. Prices and quantities
 reject binary floats at the contract boundary.
 
-`TradeEvent` has its own typed UUID, provider trade identity, exact positive
-price/quantity, and `BUY | SELL | UNKNOWN` aggressor side. `UNKNOWN` is preserved
-and never inferred. `QuoteEvent` holds exact positive bid/ask prices and
-nonnegative sizes. Locked quotes are accepted; crossed quotes are rejected
-without repair.
+`TradeEvent` has its own typed UUID, optional normalized provider trade identity,
+exact positive price/quantity, and `BUY | SELL | UNKNOWN` aggressor side.
+`UNKNOWN` is preserved and never inferred. A missing trade identity remains
+`None`. `QuoteEvent` holds exact positive bid/ask prices and nonnegative sizes.
+Locked quotes are accepted; crossed quotes are rejected without repair.
 
 `MarketDataSource` is a provider-independent protocol returning normalized
 events. It is not coupled to SQLite or a network client. The offline
@@ -1685,36 +1685,53 @@ events. It is not coupled to SQLite or a network client. The offline
 
 Provider keys are interpreted only in this adapter. Both formats pass through
 the same domain normalization and validation path. Invalid records identify
-their zero-based fixture position and stop the read.
+their zero-based fixture position and stop the read. The fixture's
+`sequence_stream` key is normalized into `SequenceStreamId`; it is not copied as
+a vendor-specific domain field.
 
 ## Deterministic Ordering and Sequence Safety
 
-A sequence stream is identified by:
+A sequence stream is explicitly identified by:
 
 ```text
-(instrument_id, venue, event_kind)
+(instrument_id, venue, sequence_stream_id)
 ```
+
+`SequenceStreamId` is a trimmed, nonblank, provider-neutral typed identity. It
+names the domain in which `sequence_number` is meaningful; it does not imply an
+event kind or embed a universal vendor policy. A source adapter must normalize
+the provider's actual sequence semantics into it. This supports a shared
+book/trade/quote sequence, separate event-kind sequences, separate channel
+sequences, or another provider-defined scope. Mock fixtures currently assign
+`book-primary`, `trade-primary`, and `quote-primary` as independent-stream
+policy; this is not a domain assumption.
 
 Canonical cross-stream inspection order is:
 
 ```text
 instrument_id
 venue
-event-kind rank (BOOK, TRADE, QUOTE)
+sequence_stream_id
 sequence_number
 exchange_time
 receive_time
 process_time
+event-kind rank (BOOK, TRADE, QUOTE)
 stable event UUID
 ```
 
 Sequence number is therefore primary within a stream; receive time never
 overrides it. Equal sequence numbers have a deterministic inspection order but
 remain invalid for reconstruction. Sequence number is required in this
-milestone, so there is no fabricated fallback for a missing sequence.
+milestone, so there is no fabricated fallback for a missing sequence. In a
+shared sequence domain, trade and quote observations advance the same sequence
+validator even though they do not mutate the order book. Thus `BOOK 1`, `TRADE
+2`, `BOOK 3`, `QUOTE 4`, `BOOK 5` is contiguous and does not create false book
+gaps.
 
-The first accepted book event establishes the starting sequence. Every ordinary
-event thereafter must be exactly the prior sequence plus one. Duplicate,
+The first accepted event in the selected normalized stream establishes the
+starting sequence. Every ordinary event thereafter must be exactly the prior
+sequence plus one. Duplicate,
 decreasing, and gapped sequences raise distinct typed errors and do not mutate
 state. `RESET` may bridge a forward gap, but may not duplicate or regress the
 sequence. It clears all orders and price levels, commits its sequence as the new
@@ -1725,12 +1742,15 @@ greater than the RESET sequence.
 
 # 21. Deterministic Order-Book Reconstruction
 
-`OrderBook` reconstructs one `(instrument_id, venue)` market-by-order stream in
-memory. Active order state is keyed by typed `order_id` and stores side, price,
-and exact remaining quantity. Bid and ask aggregates are separate Decimal maps
-keyed by price. Each transition is evaluated against copied state; order state,
-levels, sequence, and snapshot time are committed only after every invariant
-passes.
+`OrderBook` reconstructs one `(instrument_id, venue, sequence_stream_id)`
+market-by-order stream in memory. It may be configured with the normalized
+stream ID or bind to the first successfully accepted stream. Active order state
+is keyed by typed `order_id` and stores side, price, and exact remaining
+quantity. Bid and ask aggregates are separate Decimal maps keyed by price. Each
+transition is evaluated against copied state; order state, levels, sequence, and
+snapshot clocks are committed only after every invariant passes. Non-book events
+in a shared sequence domain advance continuity without changing order or level
+state.
 
 Transition semantics are:
 
@@ -1743,6 +1763,35 @@ Transition semantics are:
 * `EXECUTE` quantity is the executed amount and may carry a provider trade ID.
 * `DELETE` removes the order's entire remaining quantity.
 * `RESET` clears all active orders and aggregate levels as described above.
+
+## Execution Mutation and Trade Observation
+
+`BookEvent(action=EXECUTE)` and `TradeEvent` have different ownership:
+
+* the book execution mutates the remaining quantity of resting liquidity; and
+* the trade event is the executed-trade observation intended for future
+  trade-flow and aggressor analysis.
+
+They may describe the same economic execution and must never be blindly summed
+as two traded-volume observations. `TradeIdExecutionReconciler` is the minimal
+provider-neutral policy boundary. Its result retains both event identities, an
+optional common trade identity, typed status, and the observation or
+observations allowed to own volume:
+
+```text
+BOOK_ONLY   -> BookEvent owns volume
+TRADE_ONLY  -> TradeEvent owns volume
+MATCHED     -> common non-null trade_id; TradeEvent owns volume once
+DISTINCT    -> comparable non-null IDs differ; both own separate volume
+UNRESOLVED  -> either ID is unavailable; no automatic volume owner
+```
+
+For `MATCHED`, the book event still mutates state, but only the trade event owns
+trade-flow volume. `UNRESOLVED` deliberately blocks automatic aggregation until
+a future explicit source policy can reconcile the observations. A real adapter
+may expose a normalized common `trade_id` only when identifiers from its book
+and trade messages are comparable. No price/quantity/time heuristic and no
+aggressor-side inference is performed; `UNKNOWN` remains `UNKNOWN`.
 
 Cancel or execution quantity may not exceed remaining quantity. Modify, cancel,
 execute, and delete require a known order and matching side/price where
@@ -1782,7 +1831,9 @@ BookSnapshot
 {
     instrument_id
     venue
-    timestamp                 # process_time of the last accepted event
+    exchange_time             # clocks of the last accepted BookEvent
+    receive_time
+    process_time
     sequence_number
 
     bid_levels[]              # highest price to lowest
@@ -1796,9 +1847,24 @@ BookSnapshot
 }
 ```
 
+The former ambiguous generic `timestamp` field is removed. All three clocks are
+timezone-aware UTC and retain:
+
+```text
+exchange_time <= receive_time <= process_time
+```
+
+They always come from the most recently accepted `BookEvent` that produced the
+snapshot. A shared-stream trade or quote may advance sequence continuity but
+does not replace snapshot clocks or produce a new book snapshot. Future SRA
+research may measure market-time response using `exchange_time` separately from
+system-observable or decision-time response using `process_time`; those metrics
+are not implemented here.
+
 Snapshots are not persisted or emitted automatically by default. Replay may
-request one after every event, and research code may request one at any accepted
-event boundary. Empty sides produce `None` rather than fabricated prices.
+request one after every accepted book mutation, and research code may request
+one at any accepted book-event boundary. Empty sides produce `None` rather than
+fabricated prices.
 
 Definitions, in instrument price units, are:
 
@@ -1897,7 +1963,8 @@ engineering configuration, not empirically optimized parameters; the value of
 `RawMarketEventRepository` is the domain-facing append-only contract.
 `SQLiteRawMarketEventRepository` is the local development implementation. It
 stores normalized event payloads without update methods and enforces unique
-event UUID plus unique `(instrument_id, venue, event_kind, sequence_number)`.
+event UUID plus unique `(instrument_id, venue, sequence_stream_id,
+sequence_number)` regardless of event kind.
 Exact duplicates, conflicting reuse of an event ID, and conflicting sequence
 identity return distinct typed results; existing data is never overwritten.
 
@@ -1908,12 +1975,20 @@ stream, and an optional historical cutoff. Historical availability is gated by:
 process_time <= as_of
 ```
 
-`MarketReplay` consumes either explicit book events or one repository book
-stream, applies canonical sequence ordering, and optionally returns a snapshot
-after each accepted event. It stops at the first gap, regression, duplicate,
-unsupported mode, or impossible order state. It never continues from a corrupt
-book. News replay, integrated cross-stream chronology, and persisted snapshot
-materialization remain separate future work.
+`MarketReplay` consumes explicit market events, a source, or one repository
+sequence stream. It selects one normalized stream containing book events,
+applies canonical sequence ordering across all event kinds in that stream, and
+optionally returns a snapshot after each accepted book mutation. Multiple book
+streams require explicit `OrderBook` stream configuration. Replay stops at the
+first gap, regression, duplicate, unsupported mode, or impossible order state.
+It never continues from a corrupt book.
+
+This replay reconstructs canonical market state using normalized exchange
+sequence semantics. It is not a simulation of physical packet arrival, feed
+jitter, network reordering, or decision latency. A future arrival-order/latency
+replay layer will use `receive_time` and `process_time`. News replay, integrated
+cross-stream chronology, and persisted snapshot materialization also remain
+separate future work.
 
 See [ADR 0005](decisions/0005-deterministic-order-book-reconstruction.md).
 
@@ -3370,6 +3445,7 @@ src/sra_nexus/
         exceptions.py
         ordering.py
         features.py
+        reconciliation.py
         book.py
         snapshots.py
         sources/

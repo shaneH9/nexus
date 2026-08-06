@@ -19,6 +19,7 @@ from sra_nexus.common.types import (
     MarketOrderId,
     MarketTradeId,
     QuoteEventId,
+    SequenceStreamId,
     TradeEventId,
     new_book_event_id,
     new_quote_event_id,
@@ -39,6 +40,9 @@ class MarketTimedEvent(ContractModel):
 
     instrument_id: InstrumentId
     venue: NonBlankStr
+    sequence_stream_id: SequenceStreamId = Field(
+        description="Provider-normalized identity of the sequence-number domain."
+    )
     exchange_time: UtcDatetime = Field(description="UTC timestamp assigned by the venue.")
     receive_time: UtcDatetime = Field(description="UTC timestamp received by SRA-Nexus.")
     process_time: UtcDatetime = Field(description="UTC timestamp usable downstream.")
@@ -116,7 +120,7 @@ class TradeEvent(MarketTimedEvent):
 
     event_kind: Literal[MarketEventKind.TRADE] = MarketEventKind.TRADE
     trade_event_id: TradeEventId = Field(default_factory=new_trade_event_id)
-    trade_id: MarketTradeId
+    trade_id: MarketTradeId | None = None
     price: PositiveDecimal
     quantity: PositiveDecimal
     aggressor_side: AggressorSide = AggressorSide.UNKNOWN

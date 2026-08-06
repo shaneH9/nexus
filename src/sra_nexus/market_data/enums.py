@@ -4,7 +4,7 @@ from enum import StrEnum
 
 
 class MarketEventKind(StrEnum):
-    """Independent normalized market-event streams."""
+    """Normalized market-event variants, independent of sequence scope."""
 
     BOOK = "BOOK"
     TRADE = "TRADE"
@@ -51,3 +51,20 @@ class MarketEventFlag(StrEnum):
     AUCTION = "AUCTION"
     CORRECTION = "CORRECTION"
     ODD_LOT = "ODD_LOT"
+
+
+class TradeReconciliationStatus(StrEnum):
+    """Relationship between book-mutation and trade-print observations."""
+
+    BOOK_ONLY = "BOOK_ONLY"
+    TRADE_ONLY = "TRADE_ONLY"
+    MATCHED = "MATCHED"
+    DISTINCT = "DISTINCT"
+    UNRESOLVED = "UNRESOLVED"
+
+
+class ExecutionVolumeOwner(StrEnum):
+    """Observation permitted to own executed volume after reconciliation."""
+
+    BOOK_EVENT = "BOOK_EVENT"
+    TRADE_EVENT = "TRADE_EVENT"

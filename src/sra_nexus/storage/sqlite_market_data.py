@@ -25,19 +25,22 @@ CREATE TABLE IF NOT EXISTS raw_market_events (
     event_kind TEXT NOT NULL,
     instrument_id TEXT NOT NULL,
     venue TEXT NOT NULL,
+    sequence_stream_id TEXT NOT NULL,
     sequence_number INTEGER NOT NULL CHECK (sequence_number >= 0),
     exchange_time TEXT NOT NULL,
     receive_time TEXT NOT NULL,
     process_time TEXT NOT NULL,
     event_payload TEXT NOT NULL,
-    UNIQUE (instrument_id, venue, event_kind, sequence_number)
+    UNIQUE (instrument_id, venue, sequence_stream_id, sequence_number)
 );
 
 CREATE INDEX IF NOT EXISTS ix_raw_market_events_instrument_process
-ON raw_market_events (instrument_id, process_time, venue, event_kind, sequence_number);
+ON raw_market_events (
+    instrument_id, process_time, venue, sequence_stream_id, sequence_number
+);
 
 CREATE INDEX IF NOT EXISTS ix_raw_market_events_stream_sequence
-ON raw_market_events (instrument_id, venue, event_kind, sequence_number);
+ON raw_market_events (instrument_id, venue, sequence_stream_id, sequence_number);
 """
 
 
@@ -77,13 +80,13 @@ class SQLiteRawMarketEventRepository:
             by_sequence = connection.execute(
                 """
                 SELECT * FROM raw_market_events
-                WHERE instrument_id = ? AND venue = ? AND event_kind = ?
+                WHERE instrument_id = ? AND venue = ? AND sequence_stream_id = ?
                   AND sequence_number = ?
                 """,
                 (
                     str(event.instrument_id),
                     event.venue,
-                    event.event_kind.value,
+                    str(event.sequence_stream_id),
                     event.sequence_number,
                 ),
             ).fetchone()
@@ -102,9 +105,10 @@ class SQLiteRawMarketEventRepository:
             connection.execute(
                 """
                 INSERT INTO raw_market_events (
-                    event_id, event_kind, instrument_id, venue, sequence_number,
-                    exchange_time, receive_time, process_time, event_payload
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    event_id, event_kind, instrument_id, venue, sequence_stream_id,
+                    sequence_number, exchange_time, receive_time, process_time,
+                    event_payload
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 _event_row(event),
             )
@@ -124,11 +128,11 @@ class SQLiteRawMarketEventRepository:
 
     def list_stream(self, query: MarketEventQuery) -> tuple[MarketEvent, ...]:
         """Return an indexed stream range in deterministic sequence order."""
-        clauses = ["instrument_id = ?", "venue = ?", "event_kind = ?"]
+        clauses = ["instrument_id = ?", "venue = ?", "sequence_stream_id = ?"]
         parameters: list[object] = [
             str(query.instrument_id),
             query.venue,
-            query.event_kind.value,
+            str(query.sequence_stream_id),
         ]
         if query.start_sequence is not None:
             clauses.append("sequence_number >= ?")
@@ -143,7 +147,7 @@ class SQLiteRawMarketEventRepository:
             SELECT * FROM raw_market_events
             WHERE {" AND ".join(clauses)}
             ORDER BY sequence_number ASC, exchange_time ASC, receive_time ASC,
-                     process_time ASC, event_id ASC
+                     process_time ASC, event_kind ASC, event_id ASC
         """
         with closing(self._connect()) as connection:
             rows = connection.execute(statement, parameters).fetchall()
@@ -182,6 +186,7 @@ def _event_row(event: MarketEvent) -> tuple[object, ...]:
         event.event_kind.value,
         str(event.instrument_id),
         event.venue,
+        str(event.sequence_stream_id),
         event.sequence_number,
         _serialize_datetime(event.exchange_time),
         _serialize_datetime(event.receive_time),

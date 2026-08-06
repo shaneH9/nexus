@@ -26,21 +26,21 @@ def market_event_id(event: MarketEvent) -> BookEventId | TradeEventId | QuoteEve
 
 def market_event_sort_key(
     event: MarketEvent,
-) -> tuple[str, str, int, int, datetime, datetime, datetime, str]:
+) -> tuple[str, str, str, int, datetime, datetime, datetime, int, str]:
     """Return canonical stream-first, sequence-first deterministic ordering.
 
-    Stream identity is ``(instrument_id, venue, event_kind)``. Within a stream,
-    sequence number is primary. Equal sequences use exchange, receive, process,
-    and stable internal event identity only as deterministic inspection order;
-    sequence validation still rejects the duplicate during reconstruction.
+    Stream identity is the provider-normalized ``sequence_stream_id`` within an
+    instrument/venue. Equal sequences use clocks, kind, and stable identity only
+    for deterministic inspection; validation still rejects the duplicate.
     """
     return (
         str(event.instrument_id),
         event.venue,
-        _KIND_ORDER[event.event_kind],
+        str(event.sequence_stream_id),
         event.sequence_number,
         event.exchange_time,
         event.receive_time,
         event.process_time,
+        _KIND_ORDER[event.event_kind],
         str(market_event_id(event)),
     )

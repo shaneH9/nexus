@@ -3,7 +3,7 @@
 from decimal import Decimal
 
 import pytest
-from tests.support.market_data import INSTRUMENT, book_event
+from tests.support.market_data import INSTRUMENT, SHARED_STREAM_ID, book_event, trade_event
 
 from sra_nexus.common.types import MarketOrderId
 from sra_nexus.market_data import (
@@ -83,6 +83,33 @@ def test_basic_book_has_exact_prices_depths_and_ordering() -> None:
     assert snapshot.bid_depth_n(2) == Decimal("500")
     assert snapshot.ask_depth_n(2) == Decimal("400")
     assert snapshot.order_book_imbalance(2) == Decimal("100") / Decimal("900")
+
+
+def test_snapshot_preserves_all_clocks_from_last_accepted_book_event() -> None:
+    """A snapshot must expose the exact causal clocks of its producing BookEvent."""
+    book = OrderBook(INSTRUMENT)
+    event = book_event(
+        1,
+        BookAction.ADD,
+        order_id="clock-order",
+        sequence_stream_id=SHARED_STREAM_ID,
+    )
+
+    book.apply(event)
+    book.observe_non_book_event(
+        trade_event(
+            2,
+            trade_id="later-trade",
+            sequence_stream_id=SHARED_STREAM_ID,
+        )
+    )
+    snapshot = book.snapshot()
+
+    assert snapshot.exchange_time == event.exchange_time
+    assert snapshot.receive_time == event.receive_time
+    assert snapshot.process_time == event.process_time
+    assert snapshot.sequence_number == event.sequence_number
+    assert book.last_sequence == 2
 
 
 def test_order_lifecycle_uses_absolute_modify_and_partial_reductions() -> None:

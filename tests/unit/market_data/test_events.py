@@ -21,6 +21,7 @@ def _timing() -> dict[str, object]:
     return {
         "instrument_id": INSTRUMENT.instrument_id,
         "venue": INSTRUMENT.exchange,
+        "sequence_stream_id": "test-stream",
         "exchange_time": BASE_TIME,
         "receive_time": BASE_TIME + timedelta(microseconds=1),
         "process_time": BASE_TIME + timedelta(microseconds=2),
@@ -84,6 +85,25 @@ def test_trade_event_preserves_explicit_aggressor_side(aggressor: AggressorSide)
     )
 
     assert event.aggressor_side is aggressor
+
+
+def test_sequence_stream_identity_is_required_and_normalized() -> None:
+    """Provider sequence scope must be explicit, typed, and whitespace-normalized."""
+    payload = {
+        **_timing(),
+        "sequence_stream_id": "  shared-channel-7  ",
+        "trade_id": None,
+        "price": "100.00",
+        "quantity": "10",
+    }
+
+    event = TradeEvent.model_validate(payload)
+
+    assert event.sequence_stream_id.root == "shared-channel-7"
+    assert event.trade_id is None
+    payload.pop("sequence_stream_id")
+    with pytest.raises(ValidationError, match="sequence_stream_id"):
+        TradeEvent.model_validate(payload)
 
 
 def test_quote_allows_locked_but_rejects_crossed_market() -> None:

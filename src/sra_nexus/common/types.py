@@ -86,6 +86,10 @@ class _OpaqueStringIdentifier(RootModel[str]):
         return self.root
 
 
+class SequenceStreamId(_OpaqueStringIdentifier):
+    """Provider-normalized identity for one sequence-number domain."""
+
+
 class MarketOrderId(_OpaqueStringIdentifier):
     """Typed provider order identity within one market-data stream."""
 

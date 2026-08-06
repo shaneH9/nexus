@@ -30,7 +30,11 @@ class UnsupportedBookModeError(OrderBookStateError):
 
 
 class BookStreamMismatchError(OrderBookStateError):
-    """Raised when an event belongs to another instrument or venue stream."""
+    """Raised for another instrument, venue, or normalized sequence stream."""
+
+
+class AmbiguousBookStreamError(OrderBookStateError):
+    """Raised when replay cannot select one normalized book sequence stream."""
 
 
 class TickAlignmentError(OrderBookStateError):

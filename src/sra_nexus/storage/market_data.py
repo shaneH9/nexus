@@ -11,9 +11,9 @@ from sra_nexus.common.types import (
     BookEventId,
     InstrumentId,
     QuoteEventId,
+    SequenceStreamId,
     TradeEventId,
 )
-from sra_nexus.market_data.enums import MarketEventKind
 from sra_nexus.market_data.events import MarketEvent
 
 type MarketEventId = BookEventId | TradeEventId | QuoteEventId
@@ -43,11 +43,11 @@ class MarketEventInsertResult:
 
 
 class MarketEventQuery(ContractModel):
-    """Indexed sequence-range and historical cutoff for one market stream."""
+    """Indexed range and historical cutoff for one explicit sequence domain."""
 
     instrument_id: InstrumentId
     venue: NonBlankStr
-    event_kind: MarketEventKind
+    sequence_stream_id: SequenceStreamId
     start_sequence: int | None = Field(default=None, ge=0)
     end_sequence: int | None = Field(default=None, ge=0)
     as_of: UtcDatetime | None = None

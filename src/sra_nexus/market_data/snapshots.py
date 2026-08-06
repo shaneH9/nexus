@@ -38,7 +38,9 @@ class BookSnapshot(ContractModel):
 
     instrument_id: InstrumentId
     venue: NonBlankStr
-    timestamp: UtcDatetime
+    exchange_time: UtcDatetime
+    receive_time: UtcDatetime
+    process_time: UtcDatetime
     sequence_number: int = Field(ge=0)
     bid_levels: tuple[PriceLevel, ...] = ()
     ask_levels: tuple[PriceLevel, ...] = ()
@@ -50,7 +52,11 @@ class BookSnapshot(ContractModel):
 
     @model_validator(mode="after")
     def validate_snapshot(self) -> Self:
-        """Require ordering and exact agreement between levels and derived fields."""
+        """Require causal clocks, ordered levels, and exact derived fields."""
+        if self.exchange_time > self.receive_time:
+            raise ValueError("exchange_time must not be after receive_time")
+        if self.receive_time > self.process_time:
+            raise ValueError("receive_time must not be after process_time")
         bid_prices = tuple(level.price for level in self.bid_levels)
         ask_prices = tuple(level.price for level in self.ask_levels)
         if bid_prices != tuple(sorted(bid_prices, reverse=True)) or len(set(bid_prices)) != len(

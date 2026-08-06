@@ -13,6 +13,7 @@ from sra_nexus.common.types import (
     MarketTradeId,
     NewsId,
     QuoteEventId,
+    SequenceStreamId,
     TradeEventId,
 )
 
@@ -29,5 +30,6 @@ __all__ = [
     "MarketTradeId",
     "NewsId",
     "QuoteEventId",
+    "SequenceStreamId",
     "TradeEventId",
 ]

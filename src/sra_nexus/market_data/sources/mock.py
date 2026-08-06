@@ -64,6 +64,7 @@ def _normalize_record(record: object) -> MarketEvent:
     common = {
         "instrument_id": record["instrument"],
         "venue": record["venue_code"],
+        "sequence_stream_id": record["sequence_stream"],
         "exchange_time": record["exchange_timestamp"],
         "receive_time": record["received_timestamp"],
         "process_time": record["processed_timestamp"],
@@ -89,7 +90,7 @@ def _normalize_record(record: object) -> MarketEvent:
             {
                 **common,
                 "trade_event_id": record["message_id"],
-                "trade_id": record["provider_trade_id"],
+                "trade_id": record.get("provider_trade_id"),
                 "price": record["trade_price"],
                 "quantity": record["trade_size"],
                 "aggressor_side": record.get("aggressor", "UNKNOWN"),

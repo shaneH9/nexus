@@ -6,11 +6,14 @@ from sra_nexus.market_data.enums import (
     BookAction,
     BookDataMode,
     BookSide,
+    ExecutionVolumeOwner,
     MarketEventFlag,
     MarketEventKind,
+    TradeReconciliationStatus,
 )
 from sra_nexus.market_data.events import BookEvent, MarketEvent, QuoteEvent, TradeEvent
 from sra_nexus.market_data.exceptions import (
+    AmbiguousBookStreamError,
     BookNotInitializedError,
     BookStreamMismatchError,
     CrossedBookError,
@@ -37,10 +40,16 @@ from sra_nexus.market_data.features import (
     calculate_weighted_depth,
     is_tick_aligned,
 )
+from sra_nexus.market_data.reconciliation import (
+    ExecutionReconciliationPolicy,
+    TradeIdExecutionReconciler,
+    TradeReconciliationResult,
+)
 from sra_nexus.market_data.snapshots import BookSnapshot, PriceLevel
 
 __all__ = [
     "AggressorSide",
+    "AmbiguousBookStreamError",
     "BookAction",
     "BookDataMode",
     "BookEvent",
@@ -51,6 +60,8 @@ __all__ = [
     "CrossedBookError",
     "DuplicateOrderError",
     "DuplicateSequenceError",
+    "ExecutionReconciliationPolicy",
+    "ExecutionVolumeOwner",
     "MarketDataError",
     "MarketEvent",
     "MarketEventFlag",
@@ -69,6 +80,9 @@ __all__ = [
     "SequenceTracker",
     "TickAlignmentError",
     "TradeEvent",
+    "TradeIdExecutionReconciler",
+    "TradeReconciliationResult",
+    "TradeReconciliationStatus",
     "UnknownOrderError",
     "UnsupportedBookModeError",
     "WeightedDepthConfig",

@@ -9,9 +9,9 @@ from decimal import Decimal
 from pydantic import TypeAdapter
 
 from sra_nexus.common.models import NonBlankStr
-from sra_nexus.common.types import InstrumentId, MarketOrderId
+from sra_nexus.common.types import InstrumentId, MarketOrderId, SequenceStreamId
 from sra_nexus.market_data.enums import BookAction, BookDataMode, BookSide
-from sra_nexus.market_data.events import BookEvent
+from sra_nexus.market_data.events import BookEvent, MarketEvent, QuoteEvent, TradeEvent
 from sra_nexus.market_data.exceptions import (
     BookNotInitializedError,
     BookStreamMismatchError,
@@ -37,6 +37,7 @@ from sra_nexus.market_data.snapshots import BookSnapshot, PriceLevel
 from sra_nexus.reference.models import Instrument
 
 _VENUE_ADAPTER = TypeAdapter(NonBlankStr)
+_SEQUENCE_STREAM_ID_ADAPTER = TypeAdapter(SequenceStreamId)
 
 
 @dataclass(frozen=True, slots=True)
@@ -62,7 +63,7 @@ class SequenceTracker:
         return self._last_sequence
 
     def validate(self, sequence_number: int, *, is_reset: bool) -> None:
-        """Validate without committing so failed book mutations remain atomic."""
+        """Validate without committing so failed stream events remain atomic."""
         previous = self._last_sequence
         if previous is None:
             return
@@ -86,16 +87,29 @@ class SequenceTracker:
 class OrderBook:
     """MBO-first exact-arithmetic book with transactional state transitions."""
 
-    def __init__(self, instrument: Instrument, venue: NonBlankStr | None = None) -> None:
-        """Configure one instrument/venue stream and optional tick validation."""
+    def __init__(
+        self,
+        instrument: Instrument,
+        venue: NonBlankStr | None = None,
+        sequence_stream_id: SequenceStreamId | str | None = None,
+    ) -> None:
+        """Configure one instrument/venue and optionally bind its sequence domain."""
         self._instrument = instrument
         self._venue = (
             instrument.exchange if venue is None else _VENUE_ADAPTER.validate_python(venue)
+        )
+        self._sequence_stream_id = (
+            None
+            if sequence_stream_id is None
+            else _SEQUENCE_STREAM_ID_ADAPTER.validate_python(sequence_stream_id)
         )
         self._orders: dict[MarketOrderId, OrderState] = {}
         self._bids: dict[Decimal, Decimal] = {}
         self._asks: dict[Decimal, Decimal] = {}
         self._sequence = SequenceTracker()
+        self._last_book_sequence: int | None = None
+        self._last_exchange_time: datetime | None = None
+        self._last_receive_time: datetime | None = None
         self._last_process_time: datetime | None = None
 
     @property
@@ -109,8 +123,13 @@ class OrderBook:
         return self._venue
 
     @property
+    def sequence_stream_id(self) -> SequenceStreamId | None:
+        """Return the normalized sequence domain once configured or observed."""
+        return self._sequence_stream_id
+
+    @property
     def last_sequence(self) -> int | None:
-        """Return the last successfully committed book sequence."""
+        """Return the last sequence committed from the normalized event stream."""
         return self._sequence.last_sequence
 
     def get_order(self, order_id: MarketOrderId) -> OrderState | None:
@@ -133,8 +152,7 @@ class OrderBook:
             self._orders = {}
             self._bids = {}
             self._asks = {}
-            self._sequence.commit(event.sequence_number)
-            self._last_process_time = event.process_time
+            self._commit_book_event(event)
             return
 
         side, price, order_id = _required_order_fields(event)
@@ -183,13 +201,23 @@ class OrderBook:
         self._orders = orders
         self._bids = bids
         self._asks = asks
-        self._sequence.commit(event.sequence_number)
-        self._last_process_time = event.process_time
+        self._commit_book_event(event)
+
+    def observe_non_book_event(self, event: TradeEvent | QuoteEvent) -> None:
+        """Advance a shared sequence domain without changing reconstructed book state."""
+        self._validate_stream(event)
+        self._sequence.validate(event.sequence_number, is_reset=False)
+        self._commit_sequence(event)
 
     def snapshot(self) -> BookSnapshot:
-        """Return an immutable snapshot after the most recent accepted event."""
-        sequence_number = self._sequence.last_sequence
-        if sequence_number is None or self._last_process_time is None:
+        """Return state and clocks from the most recent accepted BookEvent."""
+        sequence_number = self._last_book_sequence
+        if (
+            sequence_number is None
+            or self._last_exchange_time is None
+            or self._last_receive_time is None
+            or self._last_process_time is None
+        ):
             raise BookNotInitializedError("cannot snapshot before an accepted book event")
         bid_levels = _price_levels(self._bids, self._orders, BookSide.BID)
         ask_levels = _price_levels(self._asks, self._orders, BookSide.ASK)
@@ -200,7 +228,9 @@ class OrderBook:
         return BookSnapshot(
             instrument_id=self.instrument_id,
             venue=self.venue,
-            timestamp=self._last_process_time,
+            exchange_time=self._last_exchange_time,
+            receive_time=self._last_receive_time,
+            process_time=self._last_process_time,
             sequence_number=sequence_number,
             bid_levels=bid_levels,
             ask_levels=ask_levels,
@@ -216,9 +246,26 @@ class OrderBook:
             ),
         )
 
-    def _validate_stream(self, event: BookEvent) -> None:
+    def _validate_stream(self, event: MarketEvent) -> None:
         if event.instrument_id != self.instrument_id or event.venue != self.venue:
-            raise BookStreamMismatchError("book event belongs to another instrument/venue stream")
+            raise BookStreamMismatchError("market event belongs to another instrument/venue")
+        if (
+            self._sequence_stream_id is not None
+            and event.sequence_stream_id != self._sequence_stream_id
+        ):
+            raise BookStreamMismatchError("market event belongs to another sequence stream")
+
+    def _commit_sequence(self, event: MarketEvent) -> None:
+        if self._sequence_stream_id is None:
+            self._sequence_stream_id = event.sequence_stream_id
+        self._sequence.commit(event.sequence_number)
+
+    def _commit_book_event(self, event: BookEvent) -> None:
+        self._commit_sequence(event)
+        self._last_book_sequence = event.sequence_number
+        self._last_exchange_time = event.exchange_time
+        self._last_receive_time = event.receive_time
+        self._last_process_time = event.process_time
 
     @staticmethod
     def _apply_add(
