@@ -14,15 +14,25 @@ change the identity of otherwise identical source content.
 import json
 from datetime import datetime
 from hashlib import sha256
+from typing import Protocol
 from unicodedata import normalize
 
-from sra_nexus.aggregator.raw import RawNewsItem
 from sra_nexus.common.models import normalize_utc_datetime
 
 HASH_POLICY_VERSION = "sra-nexus.raw-news-content.v1"
 
 
-def compute_raw_news_content_hash(item: RawNewsItem) -> str:
+class RawNewsHashInput(Protocol):
+    """Normalized fields required by the raw-news content identity policy."""
+
+    source: str
+    headline: str
+    body: str | None
+    url: str | None
+    event_time: datetime
+
+
+def compute_raw_news_content_hash(item: RawNewsHashInput) -> str:
     """Return a stable lowercase SHA-256 digest for raw source content."""
     payload = {
         "body": _normalize_optional_text(item.body),

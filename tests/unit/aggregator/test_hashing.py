@@ -4,6 +4,7 @@ import re
 from datetime import UTC, datetime, timedelta
 
 from sra_nexus.aggregator import NewsSourceType, RawNewsItem
+from sra_nexus.aggregator.factory import build_raw_news_item
 from sra_nexus.aggregator.hashing import compute_raw_news_content_hash
 
 
@@ -22,10 +23,9 @@ def _item(**overrides: object) -> RawNewsItem:
         "provider_entities": [],
         "language": "en",
         "raw_metadata": {},
-        "content_hash": "pending",
     }
     data.update(overrides)
-    return RawNewsItem.model_validate(data)
+    return build_raw_news_item(data)
 
 
 def test_same_normalized_content_has_same_hash() -> None:

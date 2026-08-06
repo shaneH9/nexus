@@ -40,11 +40,10 @@ docs/
 
 ## Development
 
-Python 3.12 or newer is required. Install the package and development tools, then
-run the checks:
+Python 3.12 or newer is required. Install the package and development tools with
+`python -m pip install -e '.[dev]'`. The standard checks are exactly:
 
 ```bash
-python -m pip install -e '.[dev]'
 python -m pytest
 python -m ruff check .
 python -m ruff format --check .

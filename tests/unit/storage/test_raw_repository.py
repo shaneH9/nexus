@@ -6,7 +6,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from sra_nexus.aggregator import NewsSourceType, RawNewsItem
-from sra_nexus.aggregator.hashing import compute_raw_news_content_hash
+from sra_nexus.aggregator.factory import build_raw_news_item
 from sra_nexus.common.models import thaw_json_object
 from sra_nexus.storage import RawNewsInsertStatus, SQLiteRawNewsRepository
 
@@ -26,13 +26,9 @@ def _item(**overrides: object) -> RawNewsItem:
         "provider_entities": ["Example Corp"],
         "language": "en",
         "raw_metadata": {"nested": {"levels": [1, 2], "active": True}},
-        "content_hash": "pending",
     }
     data.update(overrides)
-    provisional = RawNewsItem.model_validate(data)
-    return provisional.model_copy(
-        update={"content_hash": compute_raw_news_content_hash(provisional)}
-    )
+    return build_raw_news_item(data)
 
 
 def _repository(tmp_path: Path) -> SQLiteRawNewsRepository:

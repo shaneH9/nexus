@@ -7,7 +7,7 @@ from uuid import UUID
 import pytest
 
 from sra_nexus.aggregator import NewsSourceType, RawNewsItem
-from sra_nexus.aggregator.hashing import compute_raw_news_content_hash
+from sra_nexus.aggregator.factory import build_raw_news_item
 from sra_nexus.common.types import NewsId
 from sra_nexus.storage import SQLiteRawNewsRepository
 
@@ -20,19 +20,17 @@ def _timed_item(
     receive_time: datetime,
     process_time: datetime,
 ) -> RawNewsItem:
-    provisional = RawNewsItem(
-        news_id=NewsId(UUID(news_id)),
-        source="Replay Wire",
-        source_type=NewsSourceType.WIRE,
-        provider_item_id=news_id,
-        headline=headline,
-        event_time=event_time,
-        receive_time=receive_time,
-        process_time=process_time,
-        content_hash="pending",
-    )
-    return provisional.model_copy(
-        update={"content_hash": compute_raw_news_content_hash(provisional)}
+    return build_raw_news_item(
+        {
+            "news_id": NewsId(UUID(news_id)),
+            "source": "Replay Wire",
+            "source_type": NewsSourceType.WIRE,
+            "provider_item_id": news_id,
+            "headline": headline,
+            "event_time": event_time,
+            "receive_time": receive_time,
+            "process_time": process_time,
+        }
     )
 
 

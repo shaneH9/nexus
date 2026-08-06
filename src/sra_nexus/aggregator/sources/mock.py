@@ -8,7 +8,7 @@ from uuid import UUID, uuid5
 
 from pydantic import ValidationError
 
-from sra_nexus.aggregator.hashing import compute_raw_news_content_hash
+from sra_nexus.aggregator.factory import build_raw_news_item
 from sra_nexus.aggregator.raw import RawNewsItem
 from sra_nexus.aggregator.sources.base import (
     NewsSourceBatch,
@@ -88,12 +88,8 @@ class MockNewsSource:
             "provider_entities": record.get("mentioned_entities", []),
             "language": record.get("language"),
             "raw_metadata": record.get("metadata", {}),
-            "content_hash": "pending",
         }
-        provisional = RawNewsItem.model_validate(item_data)
-        return provisional.model_copy(
-            update={"content_hash": compute_raw_news_content_hash(provisional)}
-        )
+        return build_raw_news_item(item_data)
 
 
 def _provider_reference(record: dict[object, object]) -> str | None:

@@ -1,5 +1,6 @@
 """Tests for the deterministic fixture-backed news source."""
 
+import re
 from collections.abc import Mapping
 from datetime import UTC, datetime
 from pathlib import Path
@@ -7,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from sra_nexus.aggregator import NewsSourceType
+from sra_nexus.aggregator.hashing import compute_raw_news_content_hash
 from sra_nexus.aggregator.sources import MockNewsSource, MockNewsSourceFormatError, NewsSource
 
 FIXTURE_DIR = Path(__file__).resolve().parents[2] / "fixtures" / "news"
@@ -26,6 +28,16 @@ def test_mock_source_loads_multiple_valid_records() -> None:
     assert len(batch.items) == 5
     assert batch.failures == ()
     assert batch.items[0].headline == "Example Corp raises annual guidance"
+
+
+def test_mock_source_emits_computed_sha256_content_hashes() -> None:
+    """Every emitted item should contain its real canonical content digest."""
+    items = MockNewsSource(FIXTURE_DIR / "representative.json").fetch().items
+
+    assert items
+    for item in items:
+        assert re.fullmatch(r"[0-9a-f]{64}", item.content_hash)
+        assert item.content_hash == compute_raw_news_content_hash(item)
 
 
 def test_mock_source_normalizes_tickers_and_utc_offsets() -> None:
