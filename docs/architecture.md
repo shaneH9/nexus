@@ -2115,6 +2115,23 @@ hard-coded into SRA mathematics, alpha estimation, or portfolio optimization.
 Backtest output must retain the cost-model and schedule versions needed to
 reproduce an estimate.
 
+Historical reference-data rule:
+
+Entity aliases, entity/instrument mappings, and other reference mappings used
+during historical replay must not introduce information learned after the
+simulated timestamp.
+
+Long-term design should support one of:
+
+1. versioned reference records with valid_from / valid_to / available_at, or
+
+2. immutable historical reference-data snapshots selected by as_of time.
+
+Until that is implemented, historical research must explicitly document when
+current reference data is being used retrospectively.
+
+Do not silently treat present-day aliases as historically known information.
+
 ## Round-Trip Economics
 
 When a candidate trade implies both an entry and an exit, its economic test must
