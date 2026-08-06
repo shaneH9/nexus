@@ -1,0 +1,45 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "sra-nexus"
+version = "0.1.0"
+description = "Event-driven quantitative trading research and historical replay platform"
+readme = "README.md"
+requires-python = ">=3.12"
+authors = [
+  { name = "SRA-Nexus contributors" },
+]
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+  "mypy>=1.13",
+  "pytest>=8.3",
+  "pytest-cov>=6.0",
+  "ruff>=0.9",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/sra_nexus"]
+
+[tool.pytest.ini_options]
+addopts = "--strict-config --strict-markers"
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["B", "D", "E", "F", "I", "UP"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+files = ["src", "tests"]
