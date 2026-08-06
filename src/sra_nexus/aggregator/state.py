@@ -7,6 +7,7 @@ from pydantic import Field, field_validator, model_validator
 from sra_nexus.aggregator.events import EventExposure
 from sra_nexus.common.models import (
     ContractModel,
+    FiniteFloat,
     NonNegativeFiniteFloat,
     UnitIntervalScore,
     UtcDatetime,
@@ -32,7 +33,7 @@ class NewsState(ContractModel):
         ge=0,
         description="Count of source news items in the state's configured lookback window.",
     )
-    news_acceleration: float = Field(
+    news_acceleration: FiniteFloat = Field(
         default=0.0,
         description="Change in news arrival rate, measured in items per minute squared.",
     )
@@ -72,3 +73,5 @@ class NewsState(ContractModel):
         if exposure.is_direct is not expected_direct:
             group = "direct" if expected_direct else "indirect"
             raise ValueError(f"{group} exposures have the wrong is_direct value")
+        if exposure.event_id not in self.active_event_ids:
+            raise ValueError("event exposure must reference an active event")

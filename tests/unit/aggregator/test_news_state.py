@@ -60,6 +60,13 @@ def test_news_state_valid_creation_allows_negative_acceleration() -> None:
     assert state.positive_event_intensity == 1.2
 
 
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
+def test_news_state_rejects_non_finite_news_acceleration(value: float) -> None:
+    """Signed news acceleration may be unbounded but must remain finite."""
+    with pytest.raises(ValidationError):
+        _news_state(news_acceleration=value)
+
+
 @pytest.mark.parametrize(
     "field_name",
     [
@@ -146,6 +153,35 @@ def test_news_state_rejects_exposure_for_another_instrument() -> None:
             direct_event_exposures=[exposure],
             indirect_event_exposures=[],
         )
+
+
+def test_news_state_rejects_exposure_for_inactive_event() -> None:
+    """An exposure cannot enter state without its event being active."""
+    instrument_id = InstrumentId.new()
+    exposure = _exposure(instrument_id=instrument_id, is_direct=True)
+
+    with pytest.raises(ValidationError, match="active event"):
+        _news_state(
+            instrument_id=instrument_id,
+            active_event_ids=[],
+            direct_event_exposures=[exposure],
+            indirect_event_exposures=[],
+        )
+
+
+def test_news_state_accepts_exposure_for_active_event() -> None:
+    """A correctly classified exposure should validate when its event is active."""
+    instrument_id = InstrumentId.new()
+    exposure = _exposure(instrument_id=instrument_id, is_direct=True)
+
+    state = _news_state(
+        instrument_id=instrument_id,
+        active_event_ids=[exposure.event_id],
+        direct_event_exposures=[exposure],
+        indirect_event_exposures=[],
+    )
+
+    assert state.direct_event_exposures == (exposure,)
 
 
 def test_news_state_deduplicates_active_event_ids() -> None:

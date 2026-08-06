@@ -1,0 +1,92 @@
+{
+  "records": [
+    {
+      "provider": "Example Wire",
+      "source_category": "WIRE",
+      "provider_record_id": "wire-100",
+      "title": "Example Corp raises annual guidance",
+      "content": "Example Corp increased its full-year revenue outlook.",
+      "link": "https://example.test/wire/100",
+      "published_at": "2026-06-01T09:00:00-04:00",
+      "received_at": "2026-06-01T13:00:01Z",
+      "processed_at": "2026-06-01T13:00:02Z",
+      "symbols": [" exm ", "oth"],
+      "mentioned_entities": ["Example Corp"],
+      "language": "en",
+      "metadata": {
+        "desk": "companies",
+        "priority": 2,
+        "routing": {
+          "regions": ["US", "CA"],
+          "urgent": false
+        }
+      }
+    },
+    {
+      "provider": "Example Government Office",
+      "source_category": "GOVERNMENT",
+      "provider_record_id": "gov-200",
+      "title": "Agency publishes monthly activity report",
+      "content": null,
+      "link": null,
+      "published_at": "2026-06-01T13:01:00Z",
+      "received_at": "2026-06-01T13:01:01Z",
+      "processed_at": "2026-06-01T13:01:03Z",
+      "symbols": [],
+      "mentioned_entities": ["Example Government Office"],
+      "language": null,
+      "metadata": {
+        "document_kind": "monthly-report",
+        "official": true
+      }
+    },
+    {
+      "provider": "Example Alternative Signals",
+      "source_category": "SPECULATIVE",
+      "provider_record_id": "alt-300",
+      "title": "Public alternative-data observation",
+      "content": "A generic public observation was posted by the source.",
+      "link": null,
+      "published_at": "2026-06-01T13:02:00Z",
+      "received_at": "2026-06-01T13:02:02Z",
+      "processed_at": "2026-06-01T13:02:04Z",
+      "symbols": ["spec"],
+      "mentioned_entities": [],
+      "language": "en",
+      "metadata": {
+        "signal_family": "public-alternative-data",
+        "confidence_label": "unverified"
+      }
+    },
+    {
+      "provider": "Provider Alpha",
+      "source_category": "FINANCIAL_NEWS",
+      "provider_record_id": "alpha-400",
+      "title": "Company X agrees to acquire Company Y",
+      "content": "Company X signed an agreement concerning Company Y.",
+      "link": "https://alpha.test/articles/400",
+      "published_at": "2026-06-01T13:03:00Z",
+      "received_at": "2026-06-01T13:03:01Z",
+      "processed_at": "2026-06-01T13:03:02Z",
+      "symbols": ["cmpx", "cmpy"],
+      "mentioned_entities": ["Company X", "Company Y"],
+      "language": "en",
+      "metadata": {}
+    },
+    {
+      "provider": "Provider Beta",
+      "source_category": "FINANCIAL_NEWS",
+      "provider_record_id": "beta-500",
+      "title": "Company X announces acquisition of Company Y",
+      "content": "Provider Beta separately reported the announced transaction.",
+      "link": "https://beta.test/articles/500",
+      "published_at": "2026-06-01T13:03:10Z",
+      "received_at": "2026-06-01T13:03:11Z",
+      "processed_at": "2026-06-01T13:03:12Z",
+      "symbols": ["CMPX", "CMPY"],
+      "mentioned_entities": ["Company X", "Company Y"],
+      "language": "en",
+      "metadata": {}
+    }
+  ]
+}

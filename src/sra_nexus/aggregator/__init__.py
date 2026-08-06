@@ -7,6 +7,7 @@ from sra_nexus.aggregator.enums import (
     NewsSourceType,
 )
 from sra_nexus.aggregator.events import CanonicalEvent, EventExposure
+from sra_nexus.aggregator.ingestion import RawNewsIngestionService, RawNewsIngestionSummary
 from sra_nexus.aggregator.raw import RawNewsItem
 from sra_nexus.aggregator.state import NewsState
 
@@ -19,4 +20,6 @@ __all__ = [
     "NewsSourceType",
     "NewsState",
     "RawNewsItem",
+    "RawNewsIngestionService",
+    "RawNewsIngestionSummary",
 ]

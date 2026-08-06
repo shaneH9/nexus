@@ -42,17 +42,9 @@ class Instrument(ContractModel):
     @field_validator("ticker", "currency", mode="before")
     @classmethod
     def normalize_uppercase_fields(cls, value: object) -> object:
-        """Trim and uppercase ticker and currency metadata."""
+        """Uppercase ticker and currency metadata before shared trimming."""
         if isinstance(value, str):
-            return value.strip().upper()
-        return value
-
-    @field_validator("exchange", mode="before")
-    @classmethod
-    def normalize_exchange(cls, value: object) -> object:
-        """Trim surrounding whitespace from the venue identifier."""
-        if isinstance(value, str):
-            return value.strip()
+            return value.upper()
         return value
 
 

@@ -7,7 +7,9 @@ from pydantic import Field, field_validator, model_validator
 from sra_nexus.aggregator.enums import EventState, EventType, ExposureRelationType
 from sra_nexus.common.models import (
     ContractModel,
+    FiniteFloat,
     NonBlankStr,
+    NonNegativeFiniteFloat,
     SignedUnitScore,
     UnitIntervalScore,
     UtcDatetime,
@@ -49,7 +51,7 @@ class CanonicalEvent(ContractModel):
     sentiment: SignedUnitScore | None = Field(
         default=None, description="Directional sentiment from -1 (negative) to +1 (positive)."
     )
-    surprise: float | None = Field(
+    surprise: FiniteFloat | None = Field(
         default=None,
         description="Optional finite standardized surprise in standard-deviation units.",
     )
@@ -69,9 +71,8 @@ class CanonicalEvent(ContractModel):
     credibility: UnitIntervalScore | None = Field(
         default=None, description="Underlying information reliability in [0, 1]."
     )
-    expected_duration_seconds: float | None = Field(
+    expected_duration_seconds: NonNegativeFiniteFloat | None = Field(
         default=None,
-        ge=0.0,
         description="Expected active duration in seconds; must be non-negative.",
     )
     event_state: EventState

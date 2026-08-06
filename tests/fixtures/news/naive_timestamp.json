@@ -1,0 +1,19 @@
+{
+  "records": [
+    {
+      "provider": "Broken Clock News",
+      "source_category": "OTHER",
+      "provider_record_id": "naive-100",
+      "title": "Record without a timezone",
+      "content": null,
+      "link": null,
+      "published_at": "2026-06-03T10:00:00",
+      "received_at": "2026-06-03T10:00:01Z",
+      "processed_at": "2026-06-03T10:00:02Z",
+      "symbols": [],
+      "mentioned_entities": [],
+      "language": null,
+      "metadata": {}
+    }
+  ]
+}

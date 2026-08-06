@@ -134,6 +134,20 @@ def test_canonical_event_allows_unbounded_finite_surprise(surprise: float) -> No
     assert _canonical_event(surprise=surprise).surprise == surprise
 
 
+@pytest.mark.parametrize("surprise", [float("nan"), float("inf"), float("-inf")])
+def test_canonical_event_rejects_non_finite_surprise(surprise: float) -> None:
+    """Unbounded surprise values must still be finite."""
+    with pytest.raises(ValidationError):
+        _canonical_event(surprise=surprise)
+
+
+@pytest.mark.parametrize("duration", [float("nan"), float("inf"), float("-inf")])
+def test_canonical_event_rejects_non_finite_duration(duration: float) -> None:
+    """Expected duration must remain finite in addition to being non-negative."""
+    with pytest.raises(ValidationError):
+        _canonical_event(expected_duration_seconds=duration)
+
+
 @pytest.mark.parametrize(
     ("first_event_time", "first_receive_time", "last_update_time"),
     [

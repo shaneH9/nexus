@@ -269,6 +269,66 @@ Historical replay must never expose a politician transaction before it was
 publicly disclosed and realistically available through the source, receipt, and
 processing timeline.
 
+## Milestone B Raw Ingestion and Storage
+
+Raw ingestion uses a provider-independent `NewsSource` protocol. A source returns
+a `NewsSourceBatch` containing validated `RawNewsItem` values plus structured
+per-record validation failures. Provider-shaped data ends at this boundary. The
+initial `MockNewsSource` reads only local JSON fixtures and maps fixture keys such
+as `provider`, `provider_record_id`, `title`, `content`, and `published_at` into
+the existing raw contract. It performs no network access or canonicalization.
+
+Raw content identity uses SHA-256 policy
+`sra-nexus.raw-news-content.v1`. The deterministic JSON hash input contains:
+
+* the policy identifier;
+* source;
+* headline;
+* body;
+* URL; and
+* source event/publication time.
+
+Text inputs are Unicode NFC-normalized, CRLF and CR line endings become LF, and
+outer whitespace is removed. Optional values remain JSON `null`. The event time
+is normalized to UTC and serialized with microsecond precision. Internal IDs,
+provider item IDs, source type, provider ticker/entity annotations, language,
+raw metadata, `receive_time`, and `process_time` are excluded. Consequently,
+receipt or processing latency cannot give identical source content a new
+identity; provider IDs have a separate duplicate rule.
+
+Raw insertion is immutable and applies duplicate rules in this order:
+
+1. an existing non-null `(source, provider_item_id)` pair is a provider-item
+   duplicate;
+2. an existing content hash is a content duplicate; and
+3. an existing `news_id` is an internal-ID collision.
+
+No rule overwrites the first stored record. Similar reports from different
+providers remain separate raw records when their deterministic content differs;
+semantic event clustering is deferred.
+
+`RawNewsRepository` is the storage boundary. Its initial implementation uses the
+standard-library `sqlite3` module for local development only. The `raw_news`
+table stores every `RawNewsItem` field. `news_id` is the primary key,
+`content_hash` is unique, and a partial unique index covers
+`(source, provider_item_id)` only when the provider ID is non-null. A
+`(process_time, news_id)` index supports deterministic historical queries.
+Collections and metadata use deterministic JSON; timestamps use UTC ISO 8601
+with microsecond precision. Schema initialization is explicit.
+
+Historical raw availability is defined exclusively by `process_time <= as_of`.
+The cutoff must be timezone-aware and is normalized to UTC. Results sort by
+`process_time`, then `news_id`. An earlier `event_time` or `receive_time` never
+makes a record visible before processing, preventing look-ahead leakage.
+
+`RawNewsIngestionService` processes records independently. Source validation
+failures are returned as structured failure details while valid new and duplicate
+records in the same batch continue. Unexpected programming, fixture-level, and
+database/infrastructure errors propagate. The service depends only on
+`NewsSource` and `RawNewsRepository`; it contains no interpretation or trading
+logic. See [ADR 0001](decisions/0001-raw-news-sqlite-and-availability.md) for the
+storage and historical-availability decision.
+
 ---
 
 # 7. CanonicalEvent
@@ -2334,9 +2394,9 @@ Repository scaffold: COMPLETE
 
 Domain models: COMPLETE
 
-Aggregator raw ingestion: NOT STARTED
+Aggregator raw ingestion: COMPLETE
 
-Aggregator storage: NOT STARTED
+Aggregator storage: COMPLETE
 
 Canonical event generation: NOT STARTED
 

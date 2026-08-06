@@ -1,0 +1,49 @@
+{
+  "records": [
+    {
+      "provider": "Example Wire",
+      "source_category": "WIRE",
+      "provider_record_id": "wire-new-600",
+      "title": "A newly received raw article",
+      "content": "This item is new during the mixed ingestion batch.",
+      "link": "https://example.test/wire/600",
+      "published_at": "2026-06-01T13:04:00Z",
+      "received_at": "2026-06-01T13:04:01Z",
+      "processed_at": "2026-06-01T13:04:02Z",
+      "symbols": ["new"],
+      "mentioned_entities": [],
+      "language": "en",
+      "metadata": {}
+    },
+    {
+      "provider": "Example Wire",
+      "source_category": "WIRE",
+      "provider_record_id": "wire-100",
+      "title": "Example Corp raises annual guidance",
+      "content": "Example Corp increased its full-year revenue outlook.",
+      "link": "https://example.test/wire/100",
+      "published_at": "2026-06-01T09:00:00-04:00",
+      "received_at": "2026-06-01T13:04:03Z",
+      "processed_at": "2026-06-01T13:04:04Z",
+      "symbols": ["EXM", "OTH"],
+      "mentioned_entities": ["Example Corp"],
+      "language": "en",
+      "metadata": {"redelivery": true}
+    },
+    {
+      "provider": "Malformed Fixture Provider",
+      "source_category": "FINANCIAL_NEWS",
+      "provider_record_id": "bad-700",
+      "title": "   ",
+      "content": "This record should fail validation without stopping its peers.",
+      "link": null,
+      "published_at": "2026-06-01T13:05:00Z",
+      "received_at": "2026-06-01T13:05:01Z",
+      "processed_at": "2026-06-01T13:05:02Z",
+      "symbols": [],
+      "mentioned_entities": [],
+      "language": "en",
+      "metadata": {}
+    }
+  ]
+}

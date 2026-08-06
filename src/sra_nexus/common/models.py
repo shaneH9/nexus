@@ -20,12 +20,14 @@ type ImmutableJsonObject = Mapping[str, object]
 
 
 def _require_non_blank(value: str) -> str:
-    if not value.strip():
+    stripped = value.strip()
+    if not stripped:
         raise ValueError("value must not be blank")
-    return value
+    return stripped
 
 
-def _require_utc(value: datetime) -> datetime:
+def normalize_utc_datetime(value: datetime) -> datetime:
+    """Require timezone awareness and normalize a datetime to UTC."""
     offset = value.utcoffset()
     if offset is None:
         raise ValueError("datetime must be timezone-aware")
@@ -73,7 +75,11 @@ def thaw_json_object(value: ImmutableJsonObject) -> dict[str, object]:
 
 
 NonBlankStr = Annotated[str, AfterValidator(_require_non_blank)]
-UtcDatetime = Annotated[datetime, AfterValidator(_require_utc)]
+UtcDatetime = Annotated[datetime, AfterValidator(normalize_utc_datetime)]
+FiniteFloat = Annotated[
+    float,
+    Field(allow_inf_nan=False, description="Finite floating-point value."),
+]
 SignedUnitScore = Annotated[
     float,
     Field(
@@ -91,7 +97,7 @@ UnitIntervalScore = Annotated[
     ),
 ]
 NonNegativeFiniteFloat = Annotated[
-    float,
+    FiniteFloat,
     Field(ge=0.0, description="Finite dimensionless value greater than or equal to zero."),
 ]
 
