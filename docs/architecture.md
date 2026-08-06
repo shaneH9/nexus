@@ -1626,6 +1626,28 @@ MarketRegime_t
 
 Portfolio context should remain outside the raw expected-return estimator where possible.
 
+The core research hypothesis remains Shock-Resiliency Asymmetry. It is based on:
+
+* repeated same-direction liquidity shocks
+* normalized aggression
+* directional price impact
+* aggressor effectiveness and changes in aggressor effectiveness
+* replenishment ratio
+* recovery time
+* multi-level resiliency
+* net liquidity provision
+* liquidity credibility
+* flow toxicity
+* absorption efficiency
+* news and event context
+* market-regime context
+
+`NewsState` is contextual information used alongside `SRAState` and
+`MarketRegime`. It must not independently define `BUY` or `SELL` orders, and it
+does not replace SRA with a news-driven trading strategy. The alpha layer
+estimates return distributions from the combined feature context; later
+allocation and execution layers retain their separate responsibilities.
+
 ---
 
 # 48. Prediction Target
@@ -1694,25 +1716,181 @@ AlphaOutput
 
 # 50. Trading Costs
 
-Expected costs may include:
+Execution-cost components are non-negative cost magnitudes. For one modeled
+execution leg, expected execution cost is approximately:
 
 [
-C_i=
-SpreadCost+
-Fees+
-Slippage+
-MarketImpact+
+ExpectedExecutionCost_i=
+SpreadCost_i+
+BrokerCommission_i+
+ExchangeFees_i+
+RegulatoryFees_i+
+TransactionTaxes_i+
+Slippage_i+
+MarketImpact_i+
+AdverseSelection_i
+]
+
+All components in an estimate must use explicitly stated, compatible units. For
+example, components may be monetary amounts in a stated reporting currency or
+returns normalized to the same notional, but monetary amounts and return units
+must not be mixed in one calculation.
+
+When expected gross return and expected execution cost have been expressed in
+the same units:
+
+[
+PreTaxNetAlpha_i=
+ExpectedGrossReturn_i-ExpectedExecutionCost_i
+]
+
+No candidate trade should advance merely because expected gross return is
+positive. Expected gross return must exceed expected execution costs by an
+appropriate future safety margin before the candidate is considered
+economically viable:
+
+[
+ExpectedGrossReturn_i>
+ExpectedExecutionCost_i+RequiredSafetyMargin_i
+]
+
+Equivalently:
+
+[
+PreTaxNetAlpha_i>RequiredSafetyMargin_i
+]
+
+The safety margin must eventually reflect estimation uncertainty and must not be
+silently treated as zero.
+
+## Transaction Taxes and Investor Taxes
+
+`TransactionTaxes` are taxes or levies mechanically caused by executing a
+transaction. They may be included in the execution-cost model when applicable
+to the instrument, venue, jurisdiction, side, and simulated time.
+
+Ordinary investor income tax and capital-gains tax must not be modeled as fixed
+per-trade execution costs. A future, separately configurable tax and accounting
+layer may estimate such liabilities because they can depend on:
+
+* jurisdiction
+* account type
+* realized gains and losses
+* holding period
+* tax lots
+* loss carryforwards
+* wash-sale or equivalent rules
+* user-specific tax treatment
+
+The core SRA strategy, alpha estimator, and portfolio optimizer must remain
+usable without assuming any particular user's tax jurisdiction.
+
+## Time-Aware and Reproducible Cost Assumptions
+
+Execution-cost assumptions must be time-aware, versioned, and historically
+reproducible. Where historical schedules are available, a backtest must use the
+broker commission, exchange fee, regulatory fee, and transaction-tax schedules
+applicable at the simulated timestamp. It must not expose a later schedule to an
+earlier simulation time.
+
+Future brokerage adapters must expose their fee schedules through configuration
+or an execution-cost abstraction. One broker's current pricing must never be
+hard-coded into SRA mathematics, alpha estimation, or portfolio optimization.
+Backtest output must retain the cost-model and schedule versions needed to
+reproduce an estimate.
+
+## Round-Trip Economics
+
+When a candidate trade implies both an entry and an exit, its economic test must
+include both legs:
+
+[
+ExpectedRoundTripCost=
+ExpectedEntryCost+ExpectedExitCost
+]
+
+Entry and exit estimates may use different timestamps, prices, venues,
+liquidity states, order types, and execution methods. A short-horizon strategy
+must not compare expected return with entry cost alone. In that case,
+`ExpectedExecutionCost_i` in the pre-tax net-alpha equation represents the
+expected round-trip cost.
+
+## Future CostModel Contract
+
+A future `CostModel` abstraction will produce a `CostEstimate` without becoming
+part of SRA signal generation:
+
+```text
+CostEstimate
+{
+    spread_cost
+    broker_commission
+    exchange_fees
+    regulatory_fees
+    transaction_taxes
+    slippage
+    market_impact
+    adverse_selection
+    total_cost
+}
+```
+
+`total_cost` is the sum of the component cost magnitudes. A `CostModel` should
+eventually consume relevant information such as:
+
+* instrument
+* venue
+* side
+* quantity
+* price
+* order type
+* liquidity state
+* expected execution method
+* timestamp
+
+The exact estimate must also identify its units and the versioned assumptions or
+fee schedules used.
+
+A future `TaxModel` or accounting abstraction must remain separate from
+`CostModel` and from SRA signal generation. When enabled, it may use realized
+portfolio and tax-lot history plus explicit jurisdiction, account, and user
+configuration to estimate income or capital-gains tax. It must be optional and
+must not change the jurisdiction-neutral definition of the core strategy.
+
+## Gross, Cost, and Net Performance Attribution
+
+Future backtest reporting must retain at least these values separately:
+
+```text
+GrossPnL
+SpreadCost
+BrokerCommissions
+ExchangeFees
+RegulatoryFees
+TransactionTaxes
+Slippage
+MarketImpact
 AdverseSelection
-]
+TotalExecutionCost
+PreTaxNetPnL
+```
 
-Then:
+The attribution must preserve:
 
 [
-NetAlpha_i=
-ExpectedReturn_i-C_i
+PreTaxNetPnL=GrossPnL-TotalExecutionCost
 ]
 
-No opportunity should advance merely because gross expected return is positive.
+If the optional tax and accounting layer is enabled, reporting must additionally
+retain:
+
+```text
+EstimatedIncomeTax
+AfterTaxPnL
+```
+
+Only reporting final net P&L is insufficient; gross performance and every cost
+component must remain available for attribution and reproducibility.
 
 ---
 
