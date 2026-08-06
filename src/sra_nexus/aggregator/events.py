@@ -4,7 +4,12 @@ from __future__ import annotations
 
 from pydantic import Field, field_validator, model_validator
 
-from sra_nexus.aggregator.enums import EventState, EventType, ExposureRelationType
+from sra_nexus.aggregator.enums import (
+    EventState,
+    EventSubtype,
+    EventType,
+    ExposureRelationType,
+)
 from sra_nexus.common.models import (
     ContractModel,
     FiniteFloat,
@@ -37,7 +42,7 @@ class CanonicalEvent(ContractModel):
         description="UTC time this canonical representation was last updated."
     )
     event_type: EventType
-    event_subtype: NonBlankStr | None = None
+    event_subtype: EventSubtype | None = None
     headline_summary: NonBlankStr
     event_summary: str | None = None
     source_news_ids: tuple[NewsId, ...] = Field(min_length=1)
@@ -100,6 +105,8 @@ class CanonicalEvent(ContractModel):
             raise ValueError("first_event_time must not be after first_receive_time")
         if self.first_receive_time > self.last_update_time:
             raise ValueError("first_receive_time must not be after last_update_time")
+        if self.event_subtype is not None and self.event_subtype.event_type is not self.event_type:
+            raise ValueError("event_subtype must belong to event_type")
         return self
 
 

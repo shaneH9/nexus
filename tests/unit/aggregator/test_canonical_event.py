@@ -5,7 +5,7 @@ from datetime import UTC, datetime, timedelta, timezone
 import pytest
 from pydantic import ValidationError
 
-from sra_nexus.aggregator import CanonicalEvent, EventState, EventType
+from sra_nexus.aggregator import CanonicalEvent, EventState, EventSubtype, EventType
 from sra_nexus.common import CanonicalEventId, EntityId, InstrumentId, NewsId
 
 
@@ -15,7 +15,7 @@ def _canonical_event(**overrides: object) -> CanonicalEvent:
         "first_receive_time": datetime(2026, 2, 3, 14, 0, 1, tzinfo=UTC),
         "last_update_time": datetime(2026, 2, 3, 14, 0, 2, tzinfo=UTC),
         "event_type": EventType.COMPANY,
-        "event_subtype": "earnings.release",
+        "event_subtype": EventSubtype.COMPANY_EARNINGS,
         "headline_summary": "Example Corp reports earnings",
         "event_summary": None,
         "source_news_ids": [NewsId.new()],
@@ -71,6 +71,8 @@ def test_event_enums_match_milestone_taxonomy() -> None:
         "RESOLVED",
         "RETRACTED",
     }
+    assert EventSubtype.COMPANY_MERGER_ACQUISITION.value == "COMPANY.MERGER_ACQUISITION"
+    assert EventSubtype.MACRO_CPI.event_type is EventType.MACRO
 
 
 @pytest.mark.parametrize("field_name", ["headline_summary", "event_subtype"])
@@ -78,6 +80,15 @@ def test_canonical_event_rejects_blank_validated_text(field_name: str) -> None:
     """Required summaries and supplied subtypes must not be blank."""
     with pytest.raises(ValidationError):
         _canonical_event(**{field_name: "   "})
+
+
+def test_canonical_event_rejects_subtype_from_another_event_type() -> None:
+    """A namespaced subtype cannot be paired with an incompatible top-level type."""
+    with pytest.raises(ValidationError, match="event_subtype must belong"):
+        _canonical_event(
+            event_type=EventType.MACRO,
+            event_subtype=EventSubtype.COMPANY_EARNINGS,
+        )
 
 
 @pytest.mark.parametrize(

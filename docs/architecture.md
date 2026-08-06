@@ -399,6 +399,70 @@ RESOLVED
 RETRACTED
 ```
 
+## Milestone C Deterministic Canonicalization
+
+A canonical event has one stable `CanonicalEventId` and an append-only sequence
+of immutable `CanonicalEventRevision` snapshots. Each revision contains the
+complete materialized `CanonicalEvent`, its revision number, clustering metadata,
+and an explicit `available_at`. For deterministic offline processing,
+`available_at` equals the triggering `RawNewsItem.process_time`. Historical
+queries select only the highest revision satisfying `available_at <= as_of`.
+Earlier revisions are never overwritten.
+
+The deterministic classifier uses one ordered central rule table over normalized
+headline and body text. It returns top-level type, namespaced subtype, an initial
+engineering confidence, matched rule identifiers, and an explanation. Rules
+cover the small taxonomy below. When no phrase rule matches, source-type
+fallbacks select a conservative `OTHER` subtype; ordinary unmatched sources use
+`COMPANY.OTHER`. `SPECULATIVE` is only a source category and receives no special
+event type or clustering path.
+
+Comparison text is Unicode NFKC-normalized, case-folded, punctuation-normalized
+to spaces, and whitespace-collapsed. Token sets remove a small explicit stopword
+set and apply only a small declared alias table for common event wording. Raw
+headline and body text remain unchanged. Event anchors prefer provider tickers.
+When tickers are absent, provider entity strings and obvious uppercase tokens
+provide lightweight local anchors; this does not create entities or perform
+symbol lookup.
+
+Candidate retrieval uses the latest revision historically available at the
+incoming item timestamp and is indexed by event type, subtype, availability
+window, and anchor. The maximum candidate age is 36 hours. Similarity is:
+
+```text
+score = 0.55 * headline_jaccard
+      + 0.25 * anchor_jaccard
+      + 0.10 * temporal_proximity
+      + 0.10 * exact_type_and_subtype
+```
+
+Headline and anchor Jaccard are intersection over union; two empty sets provide
+zero evidence. Temporal proximity decays linearly from 1 at zero age to 0 at 36
+hours. These are initial engineering values, not empirically calibrated trading
+parameters. The clustering threshold is 0.55.
+
+Hard guards reject candidates with an incompatible event type, incompatible
+subtype, age beyond 36 hours, disjoint non-empty ticker anchors, or—when the
+event type is `COMPANY`—no shared anchor. Different providers incur no penalty.
+If the two highest qualifying scores differ by less than the 0.05 ambiguity
+margin, canonicalization returns `AMBIGUOUS` and persists no decision.
+
+The first revision is `NEW`. A matching independent provider advances an event
+to `DEVELOPING`. A matching independent official source confirms only compatible
+classes: company releases for company events; SEC sources for company or
+regulatory events; government sources for geopolitical, macro, regulatory, or
+systemic events; and central banks for macro or rate events. A matching new
+NewsId from the same source becomes `UPDATED`. `CONFIRMED` remains confirmed.
+Every matched new NewsId creates a revision so provenance changes remain
+historically visible, even when coverage is repetitive.
+
+SQLite development storage separates stable event identity, immutable revisions,
+historical revision-source membership, revision anchors, and globally unique raw
+NewsId assignment. Revision numbers and availability are monotonic. Processing a
+previously assigned NewsId returns `ALREADY_PROCESSED`; it cannot create another
+event or revision. See
+[ADR 0002](decisions/0002-immutable-canonical-event-revisions.md).
+
 ---
 
 # 8. Event Taxonomy
@@ -418,35 +482,47 @@ CURRENCY
 RATE
 ```
 
-Example subtypes:
+Initial namespaced subtypes:
 
 ```text
 COMPANY.EARNINGS
 COMPANY.GUIDANCE
-COMPANY.MERGER
+COMPANY.MERGER_ACQUISITION
 COMPANY.PRODUCT
-COMPANY.LAWSUIT
 COMPANY.MANAGEMENT
+COMPANY.LEGAL
 COMPANY.SEC_FILING
+COMPANY.CAPITAL_RAISE
+COMPANY.BUYBACK
+COMPANY.DIVIDEND
+COMPANY.OTHER
 
 MACRO.CPI
 MACRO.JOBS
 MACRO.GDP
 MACRO.RETAIL_SALES
+MACRO.OTHER
 
-RATE.FED_DECISION
-RATE.FED_SPEECH
+RATE.CENTRAL_BANK_DECISION
+RATE.CENTRAL_BANK_SPEECH
+RATE.OTHER
 
-GEOPOLITICAL.WAR
+GEOPOLITICAL.CONFLICT
 GEOPOLITICAL.SANCTION
 GEOPOLITICAL.TRADE_RESTRICTION
+GEOPOLITICAL.ELECTION
+GEOPOLITICAL.OTHER
 
 REGULATORY.ANTITRUST
 REGULATORY.EXPORT_CONTROL
-REGULATORY.DRUG_APPROVAL
+REGULATORY.APPROVAL
+REGULATORY.ENFORCEMENT
+REGULATORY.OTHER
 
 SYSTEMIC.BANK_FAILURE
 SYSTEMIC.EXCHANGE_OUTAGE
+SYSTEMIC.MARKET_DISRUPTION
+SYSTEMIC.OTHER
 ```
 
 The taxonomy must remain extensible.
@@ -2398,7 +2474,7 @@ Aggregator raw ingestion: COMPLETE
 
 Aggregator storage: COMPLETE
 
-Canonical event generation: NOT STARTED
+Canonical event generation: COMPLETE
 
 Entity linking: NOT STARTED
 

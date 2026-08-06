@@ -5,15 +5,22 @@ from uuid import UUID, uuid4
 import pytest
 from pydantic import BaseModel, ValidationError
 
-from sra_nexus.common import CanonicalEventId, EntityId, InstrumentId, NewsId
+from sra_nexus.common import (
+    CanonicalEventId,
+    CanonicalEventRevisionId,
+    EntityId,
+    InstrumentId,
+    NewsId,
+)
 from sra_nexus.common.types import (
     new_canonical_event_id,
+    new_canonical_event_revision_id,
     new_entity_id,
     new_instrument_id,
     new_news_id,
 )
 
-type Identifier = CanonicalEventId | EntityId | InstrumentId | NewsId
+type Identifier = CanonicalEventId | CanonicalEventRevisionId | EntityId | InstrumentId | NewsId
 
 
 def test_identifier_factories_generate_correct_uuid_types() -> None:
@@ -23,12 +30,14 @@ def test_identifier_factories_generate_correct_uuid_types() -> None:
         new_entity_id(),
         new_news_id(),
         new_canonical_event_id(),
+        new_canonical_event_revision_id(),
     )
 
     assert isinstance(identifiers[0], InstrumentId)
     assert isinstance(identifiers[1], EntityId)
     assert isinstance(identifiers[2], NewsId)
     assert isinstance(identifiers[3], CanonicalEventId)
+    assert isinstance(identifiers[4], CanonicalEventRevisionId)
     assert all(isinstance(identifier.root, UUID) for identifier in identifiers)
 
 

@@ -37,6 +37,10 @@ class CanonicalEventId(_UuidIdentifier):
     """Stable internal identifier for a canonical event."""
 
 
+class CanonicalEventRevisionId(_UuidIdentifier):
+    """Stable internal identifier for an immutable canonical-event revision."""
+
+
 def new_news_id() -> NewsId:
     """Return a new internal news identifier."""
     return NewsId.new()
@@ -45,6 +49,11 @@ def new_news_id() -> NewsId:
 def new_canonical_event_id() -> CanonicalEventId:
     """Return a new internal canonical-event identifier."""
     return CanonicalEventId.new()
+
+
+def new_canonical_event_revision_id() -> CanonicalEventRevisionId:
+    """Return a new immutable canonical-event revision identifier."""
+    return CanonicalEventRevisionId.new()
 
 
 def new_instrument_id() -> InstrumentId:

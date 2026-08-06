@@ -1,0 +1,49 @@
+{
+  "records": [
+    {
+      "provider": "Reporter A",
+      "source_category": "WIRE",
+      "provider_record_id": "acme-evolution-1",
+      "title": "Acme reportedly considering acquisition of Beta",
+      "content": "The companies are discussing a possible transaction.",
+      "link": "https://example.test/acme/1",
+      "published_at": "2026-07-01T09:59:50Z",
+      "received_at": "2026-07-01T09:59:59Z",
+      "processed_at": "2026-07-01T10:00:00Z",
+      "symbols": ["ACME", "BETA"],
+      "mentioned_entities": ["Acme", "Beta"],
+      "language": "en",
+      "metadata": {"stage": "report"}
+    },
+    {
+      "provider": "Reporter B",
+      "source_category": "FINANCIAL_NEWS",
+      "provider_record_id": "acme-evolution-2",
+      "title": "Acme agrees to acquire Beta",
+      "content": "A definitive transaction agreement has been reached.",
+      "link": "https://example.test/acme/2",
+      "published_at": "2026-07-01T10:04:50Z",
+      "received_at": "2026-07-01T10:04:59Z",
+      "processed_at": "2026-07-01T10:05:00Z",
+      "symbols": ["ACME", "BETA"],
+      "mentioned_entities": ["Acme", "Beta"],
+      "language": "en",
+      "metadata": {"stage": "agreement"}
+    },
+    {
+      "provider": "Acme Investor Relations",
+      "source_category": "COMPANY_RELEASE",
+      "provider_record_id": "acme-evolution-3",
+      "title": "Acme announces definitive agreement to acquire Beta",
+      "content": "Acme publicly confirms the signed acquisition agreement.",
+      "link": "https://example.test/acme/3",
+      "published_at": "2026-07-01T10:19:50Z",
+      "received_at": "2026-07-01T10:19:59Z",
+      "processed_at": "2026-07-01T10:20:00Z",
+      "symbols": ["ACME", "BETA"],
+      "mentioned_entities": ["Acme", "Beta"],
+      "language": "en",
+      "metadata": {"stage": "official-confirmation"}
+    }
+  ]
+}
