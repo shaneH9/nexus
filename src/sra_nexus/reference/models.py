@@ -4,17 +4,34 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from pydantic import Field, field_serializer, field_validator
+from pydantic import Field, field_serializer, field_validator, model_validator
 
 from sra_nexus.common.models import (
     ContractModel,
     ImmutableJsonObject,
     NonBlankStr,
+    UnitIntervalScore,
+    UtcDatetime,
     freeze_json_object,
     thaw_json_object,
 )
-from sra_nexus.common.types import EntityId, InstrumentId, new_entity_id, new_instrument_id
-from sra_nexus.reference.enums import AssetType, EntityType
+from sra_nexus.common.types import (
+    EntityId,
+    EntityInstrumentLinkId,
+    EntityRelationshipId,
+    InstrumentId,
+    new_entity_id,
+    new_entity_instrument_link_id,
+    new_entity_relationship_id,
+    new_instrument_id,
+)
+from sra_nexus.reference.enums import (
+    AssetType,
+    EntityInstrumentRelationType,
+    EntityRelationshipType,
+    EntityType,
+    RelationshipDirection,
+)
 
 
 class Instrument(ContractModel):
@@ -90,3 +107,71 @@ class Entity(ContractModel):
                 normalized.append(stripped)
                 seen.add(stripped)
         return tuple(normalized)
+
+
+class EntityRelationship(ContractModel):
+    """A time-bounded structural edge in the economic entity graph.
+
+    ``direction`` describes graph orientation, not expected event or return
+    direction. ``magnitude`` and ``confidence`` are dimensionless values in
+    ``[0, 1]``.
+    """
+
+    relationship_id: EntityRelationshipId = Field(default_factory=new_entity_relationship_id)
+    source_entity_id: EntityId
+    target_entity_id: EntityId
+    relation_type: EntityRelationshipType
+    direction: RelationshipDirection = RelationshipDirection.DIRECTED
+    magnitude: UnitIntervalScore
+    confidence: UnitIntervalScore
+    valid_from: UtcDatetime | None = None
+    valid_to: UtcDatetime | None = None
+
+    @model_validator(mode="after")
+    def validate_relationship(self) -> EntityRelationship:
+        """Reject self-edges and invalid half-open validity intervals."""
+        if self.source_entity_id == self.target_entity_id:
+            raise ValueError("entity relationships must connect distinct entities")
+        if self.valid_from is not None and self.valid_to is not None:
+            if self.valid_from >= self.valid_to:
+                raise ValueError("valid_from must be before valid_to")
+        if (
+            self.relation_type is EntityRelationshipType.COMPETITOR
+            and self.direction is not RelationshipDirection.SYMMETRIC
+        ):
+            raise ValueError("COMPETITOR relationships must be explicitly SYMMETRIC")
+        return self
+
+    def is_valid_at(self, as_of: UtcDatetime) -> bool:
+        """Return validity at ``as_of`` using ``[valid_from, valid_to)`` semantics."""
+        if self.valid_from is not None and as_of < self.valid_from:
+            return False
+        return self.valid_to is None or as_of < self.valid_to
+
+
+class EntityInstrumentLink(ContractModel):
+    """A time-bounded explicit mapping from an entity to a tradable instrument."""
+
+    link_id: EntityInstrumentLinkId = Field(default_factory=new_entity_instrument_link_id)
+    entity_id: EntityId
+    instrument_id: InstrumentId
+    relationship_type: EntityInstrumentRelationType
+    confidence: UnitIntervalScore = Field(
+        description="Dimensionless mapping confidence in the closed interval [0, 1]."
+    )
+    valid_from: UtcDatetime | None = None
+    valid_to: UtcDatetime | None = None
+
+    @model_validator(mode="after")
+    def validate_validity(self) -> EntityInstrumentLink:
+        """Require a valid optional half-open interval."""
+        if self.valid_from is not None and self.valid_to is not None:
+            if self.valid_from >= self.valid_to:
+                raise ValueError("valid_from must be before valid_to")
+        return self
+
+    def is_valid_at(self, as_of: UtcDatetime) -> bool:
+        """Return validity at ``as_of`` using ``[valid_from, valid_to)`` semantics."""
+        if self.valid_from is not None and as_of < self.valid_from:
+            return False
+        return self.valid_to is None or as_of < self.valid_to

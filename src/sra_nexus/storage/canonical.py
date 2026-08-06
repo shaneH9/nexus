@@ -68,6 +68,14 @@ class CanonicalEventRepository(Protocol):
         """Return every immutable revision in ascending revision order."""
         ...
 
+    def get_event_revision(
+        self,
+        event_id: CanonicalEventId,
+        revision_number: int,
+    ) -> CanonicalEventRevision | None:
+        """Return one immutable revision by stable event and revision number."""
+        ...
+
     def find_candidates(
         self,
         query: CanonicalEventCandidateQuery,

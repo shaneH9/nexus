@@ -113,6 +113,7 @@ def test_create_and_current_event_round_trip(tmp_path: Path) -> None:
 
     assert repository.get_current_event(revision.event.event_id) == revision.event
     assert repository.get_current_revision(revision.event.event_id) == revision
+    assert repository.get_event_revision(revision.event.event_id, 1) == revision
     assert repository.get_event_id_for_news(revision.event.source_news_ids[0]) == (
         revision.event.event_id
     )

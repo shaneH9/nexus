@@ -120,3 +120,59 @@ class ExposureRelationType(StrEnum):
     MACRO = "MACRO"
     REGULATORY = "REGULATORY"
     OTHER = "OTHER"
+
+
+class EntityMatchMethod(StrEnum):
+    """Deterministic evidence used to link event text or metadata to an entity."""
+
+    PROVIDER_TICKER = "PROVIDER_TICKER"
+    PROVIDER_ENTITY = "PROVIDER_ENTITY"
+    CANONICAL_NAME = "CANONICAL_NAME"
+    ALIAS = "ALIAS"
+    EXACT_PHRASE = "EXACT_PHRASE"
+    UNRESOLVED = "UNRESOLVED"
+
+
+class LinkAmbiguityKind(StrEnum):
+    """Reference identity whose deterministic resolution produced multiple candidates."""
+
+    ENTITY = "ENTITY"
+    TICKER = "TICKER"
+
+
+class EventEntityRole(StrEnum):
+    """Small auditable taxonomy for an entity's role in an event revision."""
+
+    PRIMARY_SUBJECT = "PRIMARY_SUBJECT"
+    SECONDARY_SUBJECT = "SECONDARY_SUBJECT"
+    COUNTERPARTY = "COUNTERPARTY"
+    COUNTRY_CONTEXT = "COUNTRY_CONTEXT"
+    SECTOR_CONTEXT = "SECTOR_CONTEXT"
+    INDUSTRY_CONTEXT = "INDUSTRY_CONTEXT"
+    COMMODITY_CONTEXT = "COMMODITY_CONTEXT"
+    REGULATOR_CONTEXT = "REGULATOR_CONTEXT"
+    MACRO_CONTEXT = "MACRO_CONTEXT"
+    OTHER = "OTHER"
+
+
+class DirectionPropagation(StrEnum):
+    """Configured effect of a structural relationship on known event direction."""
+
+    PRESERVE = "PRESERVE"
+    REVERSE = "REVERSE"
+    UNKNOWN = "UNKNOWN"
+
+
+class RelationshipTraversal(StrEnum):
+    """Allowed graph traversal relative to a relationship's stored orientation."""
+
+    FORWARD = "FORWARD"
+    REVERSE = "REVERSE"
+    BOTH = "BOTH"
+
+
+class ExposureGenerationStatus(StrEnum):
+    """Idempotent outcomes for one canonical-revision exposure generation."""
+
+    PROCESSED = "PROCESSED"
+    ALREADY_PROCESSED = "ALREADY_PROCESSED"

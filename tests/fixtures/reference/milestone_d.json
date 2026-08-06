@@ -1,0 +1,192 @@
+{
+  "entities": [
+    {
+      "entity_id": "10000000-0000-4000-8000-000000000101",
+      "entity_type": "COMPANY",
+      "canonical_name": "NVIDIA Corporation",
+      "aliases": ["NVIDIA", "Nvidia"],
+      "metadata": {"fixture_value": true}
+    },
+    {
+      "entity_id": "10000000-0000-4000-8000-000000000102",
+      "entity_type": "COMPANY",
+      "canonical_name": "Advanced Micro Devices, Inc.",
+      "aliases": ["AMD", "Advanced Micro Devices"],
+      "metadata": {"fixture_value": true}
+    },
+    {
+      "entity_id": "10000000-0000-4000-8000-000000000103",
+      "entity_type": "COMPANY",
+      "canonical_name": "Apple Inc.",
+      "aliases": ["Apple"],
+      "metadata": {"fixture_value": true}
+    },
+    {
+      "entity_id": "10000000-0000-4000-8000-000000000104",
+      "entity_type": "COMPANY",
+      "canonical_name": "Microsoft Corporation",
+      "aliases": ["Microsoft"],
+      "metadata": {"fixture_value": true}
+    },
+    {
+      "entity_id": "10000000-0000-4000-8000-000000000105",
+      "entity_type": "COMPANY",
+      "canonical_name": "Taiwan Semiconductor Manufacturing Company",
+      "aliases": ["TSMC", "Taiwan Semiconductor"],
+      "metadata": {"fixture_value": true}
+    },
+    {
+      "entity_id": "10000000-0000-4000-8000-000000000201",
+      "entity_type": "INDUSTRY",
+      "canonical_name": "Semiconductors",
+      "aliases": ["Semiconductor Industry"],
+      "metadata": {"fixture_value": true}
+    },
+    {
+      "entity_id": "10000000-0000-4000-8000-000000000202",
+      "entity_type": "SECTOR",
+      "canonical_name": "Technology",
+      "aliases": ["Technology Sector"],
+      "metadata": {"fixture_value": true}
+    },
+    {
+      "entity_id": "10000000-0000-4000-8000-000000000301",
+      "entity_type": "COUNTRY",
+      "canonical_name": "Taiwan",
+      "aliases": [],
+      "metadata": {"fixture_value": true}
+    },
+    {
+      "entity_id": "10000000-0000-4000-8000-000000000302",
+      "entity_type": "COUNTRY",
+      "canonical_name": "United States",
+      "aliases": ["US", "USA"],
+      "metadata": {"fixture_value": true}
+    },
+    {
+      "entity_id": "10000000-0000-4000-8000-000000000401",
+      "entity_type": "COMMODITY",
+      "canonical_name": "Crude Oil",
+      "aliases": ["Oil"],
+      "metadata": {"fixture_value": true}
+    },
+    {
+      "entity_id": "10000000-0000-4000-8000-000000000501",
+      "entity_type": "COMPANY",
+      "canonical_name": "Skyway Airlines",
+      "aliases": ["Skyway"],
+      "metadata": {"fixture_value": true, "synthetic": true}
+    },
+    {
+      "entity_id": "10000000-0000-4000-8000-000000000502",
+      "entity_type": "COMPANY",
+      "canonical_name": "Example Energy",
+      "aliases": [],
+      "metadata": {"fixture_value": true, "synthetic": true}
+    }
+  ],
+  "instruments": [
+    {
+      "instrument_id": "20000000-0000-4000-8000-000000000101",
+      "ticker": "NVDA",
+      "exchange": "NASDAQ",
+      "asset_type": "EQUITY",
+      "currency": "USD",
+      "sector": "Technology",
+      "industry": "Semiconductors",
+      "country": "US",
+      "tick_size": "0.01",
+      "lot_size": "1"
+    },
+    {
+      "instrument_id": "20000000-0000-4000-8000-000000000102",
+      "ticker": "AMD",
+      "exchange": "NASDAQ",
+      "asset_type": "EQUITY",
+      "currency": "USD",
+      "sector": "Technology",
+      "industry": "Semiconductors",
+      "country": "US",
+      "tick_size": "0.01",
+      "lot_size": "1"
+    },
+    {
+      "instrument_id": "20000000-0000-4000-8000-000000000103",
+      "ticker": "AAPL",
+      "exchange": "NASDAQ",
+      "asset_type": "EQUITY",
+      "currency": "USD",
+      "sector": "Technology",
+      "industry": "Consumer Electronics",
+      "country": "US",
+      "tick_size": "0.01",
+      "lot_size": "1"
+    },
+    {
+      "instrument_id": "20000000-0000-4000-8000-000000000104",
+      "ticker": "MSFT",
+      "exchange": "NASDAQ",
+      "asset_type": "EQUITY",
+      "currency": "USD",
+      "sector": "Technology",
+      "industry": "Software",
+      "country": "US",
+      "tick_size": "0.01",
+      "lot_size": "1"
+    },
+    {
+      "instrument_id": "20000000-0000-4000-8000-000000000105",
+      "ticker": "TSM",
+      "exchange": "NYSE",
+      "asset_type": "EQUITY",
+      "currency": "USD",
+      "sector": "Technology",
+      "industry": "Semiconductors",
+      "country": "Taiwan",
+      "tick_size": "0.01",
+      "lot_size": "1"
+    },
+    {
+      "instrument_id": "20000000-0000-4000-8000-000000000501",
+      "ticker": "SKYW",
+      "exchange": "NYSE",
+      "asset_type": "EQUITY",
+      "currency": "USD",
+      "sector": "Industrials",
+      "industry": "Airlines",
+      "country": "US",
+      "tick_size": "0.01",
+      "lot_size": "1"
+    },
+    {
+      "instrument_id": "20000000-0000-4000-8000-000000000502",
+      "ticker": "XENG",
+      "exchange": "NYSE",
+      "asset_type": "EQUITY",
+      "currency": "USD",
+      "sector": "Energy",
+      "industry": "Oil & Gas",
+      "country": "US",
+      "tick_size": "0.01",
+      "lot_size": "1"
+    }
+  ],
+  "entity_instrument_links": [
+    {"link_id": "30000000-0000-4000-8000-000000000101", "entity_id": "10000000-0000-4000-8000-000000000101", "instrument_id": "20000000-0000-4000-8000-000000000101", "relationship_type": "PRIMARY_EQUITY", "confidence": 1.0},
+    {"link_id": "30000000-0000-4000-8000-000000000102", "entity_id": "10000000-0000-4000-8000-000000000102", "instrument_id": "20000000-0000-4000-8000-000000000102", "relationship_type": "PRIMARY_EQUITY", "confidence": 1.0},
+    {"link_id": "30000000-0000-4000-8000-000000000103", "entity_id": "10000000-0000-4000-8000-000000000103", "instrument_id": "20000000-0000-4000-8000-000000000103", "relationship_type": "PRIMARY_EQUITY", "confidence": 1.0},
+    {"link_id": "30000000-0000-4000-8000-000000000104", "entity_id": "10000000-0000-4000-8000-000000000104", "instrument_id": "20000000-0000-4000-8000-000000000104", "relationship_type": "PRIMARY_EQUITY", "confidence": 1.0},
+    {"link_id": "30000000-0000-4000-8000-000000000105", "entity_id": "10000000-0000-4000-8000-000000000105", "instrument_id": "20000000-0000-4000-8000-000000000105", "relationship_type": "ADR", "confidence": 0.98},
+    {"link_id": "30000000-0000-4000-8000-000000000501", "entity_id": "10000000-0000-4000-8000-000000000501", "instrument_id": "20000000-0000-4000-8000-000000000501", "relationship_type": "PRIMARY_EQUITY", "confidence": 1.0},
+    {"link_id": "30000000-0000-4000-8000-000000000502", "entity_id": "10000000-0000-4000-8000-000000000502", "instrument_id": "20000000-0000-4000-8000-000000000502", "relationship_type": "PRIMARY_EQUITY", "confidence": 1.0}
+  ],
+  "relationships": [
+    {"relationship_id": "40000000-0000-4000-8000-000000000101", "source_entity_id": "10000000-0000-4000-8000-000000000105", "target_entity_id": "10000000-0000-4000-8000-000000000101", "relation_type": "SUPPLIER_TO", "direction": "DIRECTED", "magnitude": 0.8, "confidence": 0.9},
+    {"relationship_id": "40000000-0000-4000-8000-000000000102", "source_entity_id": "10000000-0000-4000-8000-000000000101", "target_entity_id": "10000000-0000-4000-8000-000000000201", "relation_type": "MEMBER_OF_INDUSTRY", "direction": "DIRECTED", "magnitude": 0.9, "confidence": 0.95},
+    {"relationship_id": "40000000-0000-4000-8000-000000000103", "source_entity_id": "10000000-0000-4000-8000-000000000102", "target_entity_id": "10000000-0000-4000-8000-000000000201", "relation_type": "MEMBER_OF_INDUSTRY", "direction": "DIRECTED", "magnitude": 0.85, "confidence": 0.95},
+    {"relationship_id": "40000000-0000-4000-8000-000000000104", "source_entity_id": "10000000-0000-4000-8000-000000000201", "target_entity_id": "10000000-0000-4000-8000-000000000202", "relation_type": "MEMBER_OF_SECTOR", "direction": "DIRECTED", "magnitude": 0.95, "confidence": 0.98},
+    {"relationship_id": "40000000-0000-4000-8000-000000000105", "source_entity_id": "10000000-0000-4000-8000-000000000105", "target_entity_id": "10000000-0000-4000-8000-000000000301", "relation_type": "OPERATES_IN", "direction": "DIRECTED", "magnitude": 0.9, "confidence": 0.95},
+    {"relationship_id": "40000000-0000-4000-8000-000000000501", "source_entity_id": "10000000-0000-4000-8000-000000000501", "target_entity_id": "10000000-0000-4000-8000-000000000401", "relation_type": "EXPOSED_TO_COMMODITY", "direction": "DIRECTED", "magnitude": 0.85, "confidence": 0.9},
+    {"relationship_id": "40000000-0000-4000-8000-000000000502", "source_entity_id": "10000000-0000-4000-8000-000000000502", "target_entity_id": "10000000-0000-4000-8000-000000000401", "relation_type": "EXPOSED_TO_COMMODITY", "direction": "DIRECTED", "magnitude": 0.9, "confidence": 0.9}
+  ]
+}

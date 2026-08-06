@@ -41,6 +41,18 @@ class CanonicalEventRevisionId(_UuidIdentifier):
     """Stable internal identifier for an immutable canonical-event revision."""
 
 
+class EntityRelationshipId(_UuidIdentifier):
+    """Stable internal identifier for a structural entity relationship."""
+
+
+class EntityInstrumentLinkId(_UuidIdentifier):
+    """Stable internal identifier for an entity-to-instrument relationship."""
+
+
+class ExposurePathId(_UuidIdentifier):
+    """Stable internal identifier for one auditable event-exposure path."""
+
+
 def new_news_id() -> NewsId:
     """Return a new internal news identifier."""
     return NewsId.new()
@@ -64,3 +76,18 @@ def new_instrument_id() -> InstrumentId:
 def new_entity_id() -> EntityId:
     """Return a new internal entity identifier."""
     return EntityId.new()
+
+
+def new_entity_relationship_id() -> EntityRelationshipId:
+    """Return a new structural relationship identifier."""
+    return EntityRelationshipId.new()
+
+
+def new_entity_instrument_link_id() -> EntityInstrumentLinkId:
+    """Return a new entity-to-instrument link identifier."""
+    return EntityInstrumentLinkId.new()
+
+
+def new_exposure_path_id() -> ExposurePathId:
+    """Return a new exposure-path identifier."""
+    return ExposurePathId.new()

@@ -9,6 +9,9 @@ from sra_nexus.common import (
     CanonicalEventId,
     CanonicalEventRevisionId,
     EntityId,
+    EntityInstrumentLinkId,
+    EntityRelationshipId,
+    ExposurePathId,
     InstrumentId,
     NewsId,
 )
@@ -16,11 +19,23 @@ from sra_nexus.common.types import (
     new_canonical_event_id,
     new_canonical_event_revision_id,
     new_entity_id,
+    new_entity_instrument_link_id,
+    new_entity_relationship_id,
+    new_exposure_path_id,
     new_instrument_id,
     new_news_id,
 )
 
-type Identifier = CanonicalEventId | CanonicalEventRevisionId | EntityId | InstrumentId | NewsId
+type Identifier = (
+    CanonicalEventId
+    | CanonicalEventRevisionId
+    | EntityId
+    | EntityInstrumentLinkId
+    | EntityRelationshipId
+    | ExposurePathId
+    | InstrumentId
+    | NewsId
+)
 
 
 def test_identifier_factories_generate_correct_uuid_types() -> None:
@@ -31,6 +46,9 @@ def test_identifier_factories_generate_correct_uuid_types() -> None:
         new_news_id(),
         new_canonical_event_id(),
         new_canonical_event_revision_id(),
+        new_entity_relationship_id(),
+        new_entity_instrument_link_id(),
+        new_exposure_path_id(),
     )
 
     assert isinstance(identifiers[0], InstrumentId)
@@ -38,6 +56,9 @@ def test_identifier_factories_generate_correct_uuid_types() -> None:
     assert isinstance(identifiers[2], NewsId)
     assert isinstance(identifiers[3], CanonicalEventId)
     assert isinstance(identifiers[4], CanonicalEventRevisionId)
+    assert isinstance(identifiers[5], EntityRelationshipId)
+    assert isinstance(identifiers[6], EntityInstrumentLinkId)
+    assert isinstance(identifiers[7], ExposurePathId)
     assert all(isinstance(identifier.root, UUID) for identifier in identifiers)
 
 

@@ -1,0 +1,19 @@
+{
+  "records": [
+    {
+      "provider": "Alternative Offline Observation",
+      "source_category": "SPECULATIVE",
+      "provider_record_id": "spec-nvda-link-1",
+      "title": "NVIDIA reports quarterly results",
+      "content": null,
+      "link": null,
+      "published_at": "2026-07-01T12:59:58Z",
+      "received_at": "2026-07-01T12:59:59Z",
+      "processed_at": "2026-07-01T13:00:00Z",
+      "symbols": ["NVDA"],
+      "mentioned_entities": ["NVIDIA Corporation"],
+      "language": "en",
+      "metadata": {"fixture_only": true}
+    }
+  ]
+}

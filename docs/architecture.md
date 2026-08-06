@@ -190,6 +190,98 @@ Entity
 }
 ```
 
+## Milestone D Reference Data and Economic Relationships
+
+`EntityRepository` and `InstrumentRepository` are provider-independent
+reference-data boundaries. The initial deterministic implementations support:
+
+* immutable insert and identifier lookup for `Entity` and `Instrument`;
+* normalized exact canonical-name and alias lookup;
+* explicit ambiguity when multiple entities share a canonical name or alias;
+* ticker lookup constrained by optional exchange and asset type;
+* explicit ambiguity when ticker metadata identifies multiple instruments; and
+* validity-aware entity-to-instrument association queries.
+
+Alias and canonical-name lookup uses Unicode-compatible, case-insensitive exact
+normalization. It never resolves a collision by insertion order. Ticker lookup
+normalizes case but treats ticker as metadata rather than identity.
+
+The entity-to-instrument relationship is explicit:
+
+```text
+EntityInstrumentLink
+{
+    link_id
+    entity_id
+    instrument_id
+    relationship_type
+    confidence
+    valid_from
+    valid_to
+}
+```
+
+Initial relationship types are:
+
+```text
+PRIMARY_EQUITY
+SECONDARY_EQUITY
+ETF
+ADR
+OTHER
+```
+
+`confidence` is a dimensionless engineering value in `[0, 1]`. Optional
+validity uses a half-open interval, `[valid_from, valid_to)`. Missing bounds mean
+the bound is unknown; the system must not invent a date.
+
+Structural economic relationships are separate from event direction:
+
+```text
+EntityRelationship
+{
+    relationship_id
+    source_entity_id
+    target_entity_id
+    relation_type
+    direction
+    magnitude
+    confidence
+    valid_from
+    valid_to
+}
+```
+
+`direction` is `DIRECTED` or explicitly `SYMMETRIC`; it describes graph
+orientation and never encodes a positive or negative event conclusion.
+`COMPETITOR` is explicitly symmetric in the initial contract. `magnitude` and
+`confidence` are dimensionless values in `[0, 1]`. Relationship validity also
+uses `[valid_from, valid_to)`, and every historical graph query filters at the
+canonical revision's aware UTC `available_at`.
+
+The initial relationship taxonomy is deliberately small:
+
+```text
+OWNS_OR_ISSUES
+COMPETITOR
+CUSTOMER_OF
+SUPPLIER_TO
+MEMBER_OF_SECTOR
+MEMBER_OF_INDUSTRY
+LOCATED_IN
+OPERATES_IN
+EXPOSED_TO_COMMODITY
+EXPOSED_TO_CURRENCY
+REGULATED_BY
+MACRO_SENSITIVE_TO
+OTHER
+```
+
+SQLite development storage uses `entities`, `entity_aliases`, `instruments`,
+`entity_instrument_links`, and `entity_relationships`. Name, alias, ticker,
+validity, source-edge, and target-edge queries have explicit indexes. Domain
+models and services do not contain SQL.
+
 ---
 
 # 6. RawNewsItem
@@ -587,6 +679,230 @@ COMMODITY
 MACRO
 REGULATORY
 ```
+
+## Milestone D Entity Linking and Exposure Graph
+
+Milestone D processes one immutable `CanonicalEventRevision` at a time:
+
+```text
+CanonicalEventRevision
+    -> deterministic entity linking
+    -> explicit instrument resolution
+    -> bounded economic-relationship traversal
+    -> revision-specific EventExposure records and ExposurePaths
+```
+
+The result is contextual economic exposure. It is never a `BUY`, `SELL`,
+position size, or order.
+
+### Deterministic Entity Linking
+
+The initial linker uses only local, explicit evidence in this precedence:
+
+1. `RawNewsItem.provider_tickers`, resolved through `InstrumentRepository` and
+   a valid `EntityInstrumentLink`;
+2. `RawNewsItem.provider_entities`, resolved by exact canonical name or alias;
+3. explicit sector, industry, country, commodity, and macro context already on
+   the canonical revision; and
+4. exact canonical-name or alias phrases in the canonical headline and summary;
+   and
+5. fallback ticker-anchor tokens retained by deterministic canonicalization.
+
+It uses no LLM, embedding, external symbol lookup, or statistical NLP. A match
+produces an auditable `EntityLinkResult` containing `entity_id`, matched text,
+typed method, confidence, primary-subject flag, and explanation. Unknown
+provider metadata remains an explicit unresolved result. A collision produces a
+typed entity or ticker ambiguity; the linker never silently chooses one.
+
+Initial match confidences are centralized engineering priors:
+
+```text
+provider ticker:  1.00
+provider entity:  0.95
+canonical name:   0.90
+alias:            0.85
+exact context:    0.80
+```
+
+These values represent deterministic mapping confidence, not source
+credibility, sentiment, or empirical return estimates.
+
+Resolved entities become immutable revision-specific records:
+
+```text
+EventEntityLink
+{
+    event_id
+    revision_id
+    revision_number
+    entity_id
+    role
+    relevance
+    confidence
+    is_direct
+    matched_text
+    match_method
+    explanation
+    available_at
+}
+```
+
+Roles are limited to primary subject, secondary subject, counterparty, country,
+sector, industry, commodity, regulator, macro, and other context.
+
+### Direct and Indirect Exposure
+
+An instrument connected to a directly linked event entity through a valid
+`EntityInstrumentLink` receives a direct exposure. Initial direct issuer
+magnitude is `1.0`; this is an engineering prior, not a calibrated expected
+return. An instrument reached after one or more structural entity relationships
+receives an indirect exposure. Direct and indirect evidence for the same
+instrument remain separately materialized.
+
+Unknown event direction is represented as `0`, meaning no deterministic
+directional conclusion has been established. The initial explicit semantic
+rules cover buyback authorization, dividend suspension/cancellation, regulatory
+approval/rejection, and sanctions. All other cases remain `0`. This is not a
+sentiment model.
+
+### Bounded Propagation and Formulas
+
+Traversal uses path-local visited entities and defaults to:
+
+```text
+max_depth = 2
+decay_factor = 0.75
+relevance_decay = 0.70
+```
+
+For a path at depth (d):
+
+[
+Magnitude_{path}=
+ParentMagnitude
+\cdot
+\prod_{j=1}^{d}RelationshipMagnitude_j
+\cdot
+DecayFactor^d
+]
+
+[
+Confidence_{path}=
+EntityLinkConfidence
+\cdot
+\prod_{j=1}^{d}RelationshipConfidence_j
+\cdot
+EntityInstrumentLinkConfidence
+]
+
+[
+Relevance_{path}=
+ParentRelevance
+\cdot
+RelevanceDecay^d
+]
+
+All values are dimensionless and remain in `[0, 1]`. The parameters are
+centralized deterministic engineering values and have not been optimized on
+fixture outcomes.
+
+Traversal orientation is also centralized. Supplier, customer, and ownership
+edges traverse forward. Membership, location, operation, commodity, currency,
+regulation, and macro-sensitivity edges traverse from the referenced context
+back toward exposed entities. Explicitly symmetric edges traverse both ways.
+
+Sign propagation is deliberately more conservative than graph traversal:
+
+* ownership preserves a known direction;
+* sector and industry membership preserve direction only for sector events;
+* location and operation preserve direction only for geopolitical events;
+* regulation preserves direction only for regulatory events; and
+* supplier, customer, competitor, commodity, currency, macro, and unclassified
+  relationships default to unknown direction.
+
+A relationship policy may explicitly preserve, reverse, or erase direction.
+Connectivity and magnitude remain available even when direction becomes zero.
+
+### Exposure Paths and Multi-Path Materialization
+
+Every direct and indirect path is retained:
+
+```text
+ExposurePath
+{
+    path_id
+    event_id
+    revision_id
+    revision_number
+    available_at
+    starting_entity_id
+    relationship_ids[]
+    entity_ids[]
+    target_entity_id
+    target_instrument_id
+    depth
+    direction
+    magnitude
+    relevance
+    confidence
+}
+```
+
+Path IDs are deterministic UUIDv5 values derived from immutable revision and
+path identity. Cycles are invalid in a stored path.
+
+For each `(event_id, revision, instrument_id, is_direct)` key, paths produce one
+materialized exposure. Multiple path magnitudes and confidences use the bounded
+combination:
+
+[
+CombinedValue=1-\prod_p(1-Value_p)
+]
+
+Relevance is the maximum path relevance. The relation type comes from the
+strongest path, with deterministic confidence and path-identity tie breaks.
+Unknown-direction paths do not conflict with a known sign. If positive and
+negative deterministic paths both exist, materialized direction becomes `0`
+and `direction_conflict` is `True`; processing order never selects the winner.
+All path evidence remains separately queryable.
+
+### Historical Persistence and Idempotency
+
+`EventExposureService` depends on repository protocols and contains no SQL. It
+loads one exact canonical revision, links entities, resolves instruments,
+traverses validity-filtered relationships, materializes exposures, and saves the
+complete result.
+
+The SQLite development backend uses:
+
+```text
+event_entity_link_runs
+event_entity_links
+event_exposure_runs
+event_exposures
+exposure_paths
+```
+
+Records are immutable by canonical `revision_id`. Run markers preserve the
+difference between an unprocessed revision and a processed revision with zero
+links or exposures. Reprocessing an existing revision returns
+`ALREADY_PROCESSED` with the same links, exposures, and paths. A conflicting
+rewrite is rejected.
+
+Initial deterministic offline processing assigns the exposure snapshot the
+canonical revision's `available_at`. Therefore a revision cannot expose an
+entity or relationship before that revision is available. Historical event
+queries select only the latest processed exposure revision satisfying
+`available_at <= as_of`; instrument queries select one latest visible revision
+per event. Any future asynchronous implementation must record a later realistic
+availability time when graph processing is not synchronous.
+
+`SPECULATIVE` remains solely a `NewsSourceType`. A speculative-source canonical
+event follows the same entity and exposure pipeline and does not create a
+`SPECULATIVE` event type or special graph logic. Source credibility remains a
+later scoring concern.
+
+See [ADR 0003](decisions/0003-revision-aware-event-exposure-graph.md).
 
 ---
 
@@ -2370,6 +2686,7 @@ src/sra_nexus/
         clock.py
 
     reference/
+        repositories.py
         instruments.py
         entities.py
 
@@ -2380,6 +2697,8 @@ src/sra_nexus/
         deduplication.py
         classification.py
         entity_linking.py
+        entity_links.py
+        exposures.py
         sentiment.py
         surprise.py
         event_graph.py
@@ -2436,8 +2755,12 @@ src/sra_nexus/
 
     storage/
         raw.py
+        canonical.py
+        event_graph.py
         normalized.py
         feature_store.py
+        sqlite_reference.py
+        sqlite_event_graph.py
 
     monitoring/
         metrics.py
@@ -2654,9 +2977,9 @@ Aggregator storage: COMPLETE
 
 Canonical event generation: COMPLETE
 
-Entity linking: NOT STARTED
+Entity linking: COMPLETE
 
-Event exposure graph: NOT STARTED
+Event exposure graph: COMPLETE
 
 NewsState: NOT STARTED
 

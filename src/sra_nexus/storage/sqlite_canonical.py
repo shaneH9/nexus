@@ -213,6 +213,25 @@ class SQLiteCanonicalEventRepository:
             ).fetchall()
             return tuple(self._row_to_revision(connection, row) for row in rows)
 
+    def get_event_revision(
+        self,
+        event_id: CanonicalEventId,
+        revision_number: int,
+    ) -> CanonicalEventRevision | None:
+        """Return one immutable revision by event identity and positive number."""
+        if revision_number < 1:
+            raise ValueError("revision_number must be positive")
+        with closing(self._connect()) as connection:
+            row = connection.execute(
+                """
+                SELECT *
+                FROM canonical_event_revisions
+                WHERE event_id = ? AND revision_number = ?
+                """,
+                (str(event_id), revision_number),
+            ).fetchone()
+            return None if row is None else self._row_to_revision(connection, row)
+
     def find_candidates(
         self,
         query: CanonicalEventCandidateQuery,
