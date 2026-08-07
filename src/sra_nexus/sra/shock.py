@@ -50,7 +50,7 @@ class ShockDetectionConfig(ContractModel):
     minimum_normalized_aggression: NonNegativeDecimal | None = Decimal("0.5")
     minimum_aggressive_volume: NonNegativeDecimal | None = Decimal("100")
     minimum_levels_consumed: int | None = 1
-    minimum_event_velocity: NonNegativeDecimal | None = None
+    minimum_average_aggressive_trade_size: NonNegativeDecimal | None = None
     detection_version: NonBlankStr = SHOCK_DETECTION_VERSION
 
     @model_validator(mode="after")
@@ -64,7 +64,7 @@ class ShockDetectionConfig(ContractModel):
                 self.minimum_normalized_aggression,
                 self.minimum_aggressive_volume,
                 self.minimum_levels_consumed,
-                self.minimum_event_velocity,
+                self.minimum_average_aggressive_trade_size,
             )
         ):
             raise ValueError("at least one shock threshold must be configured")
@@ -177,8 +177,8 @@ class ShockFeatures(ContractModel):
     normalization_unavailable_reason: AggressionUnavailableReason | None = None
     levels_touched: int = Field(ge=0)
     levels_consumed: int = Field(ge=0)
-    event_velocity: PositiveDecimal
-    clock_velocity: PositiveDecimal | None
+    average_aggressive_trade_size: PositiveDecimal
+    clock_aggressive_flow_rate: PositiveDecimal | None
     pre_spread: NonNegativeDecimal | None
     pre_midprice: PositiveDecimal | None
     pre_weighted_opposite_depth: NonNegativeDecimal
@@ -371,8 +371,10 @@ def build_shock_features(
         normalization_unavailable_reason=normalized.unavailable_reason,
         levels_touched=penetration.levels_touched,
         levels_consumed=penetration.levels_consumed,
-        event_velocity=normalized.aggressive_volume / Decimal(directional_count),
-        clock_velocity=(None if elapsed == 0 else normalized.aggressive_volume / elapsed),
+        average_aggressive_trade_size=(normalized.aggressive_volume / Decimal(directional_count)),
+        clock_aggressive_flow_rate=(
+            None if elapsed == 0 else normalized.aggressive_volume / elapsed
+        ),
         pre_spread=pre_snapshot.spread,
         pre_midprice=pre_snapshot.midprice,
         pre_weighted_opposite_depth=normalized.weighted_opposite_depth,
@@ -407,9 +409,9 @@ def classify_shock(
             ),
         ),
         _evaluate_rule(
-            ShockDetectionRule.EVENT_VELOCITY,
-            features.event_velocity,
-            policy.minimum_event_velocity,
+            ShockDetectionRule.AVERAGE_AGGRESSIVE_TRADE_SIZE,
+            features.average_aggressive_trade_size,
+            policy.minimum_average_aggressive_trade_size,
         ),
     )
     normalized_available = features.normalized_aggression is not None

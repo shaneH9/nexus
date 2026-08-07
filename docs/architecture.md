@@ -2043,7 +2043,9 @@ A liquidity shock is an unusually strong aggressive event relative to current li
 Candidate features:
 
 * normalized aggression
-* aggressive-volume velocity
+* average aggressive trade size
+* future event aggressive-flow rate
+* clock aggressive-flow rate
 * price levels consumed
 * immediate midprice displacement
 * spread
@@ -2055,7 +2057,7 @@ An initial research score may be:
 S_t=
 z(A_t)
 +
-\beta_1z(Velocity_t)
+\beta_1z(AggressiveFlowRate_t)
 +
 \beta_2z(LevelsConsumed_t)
 +
@@ -2069,6 +2071,9 @@ S_t>\theta_S
 ]
 
 Initially prefer transparent thresholds and retain all raw components rather than immediately optimizing coefficients.
+`AggressiveFlowRate_t` in this future conceptual score must use a correctly
+defined flow-rate denominator; it is not the implemented average aggressive
+trade size. The statistical score remains unimplemented.
 
 ---
 
@@ -2359,7 +2364,7 @@ OF_W=V_W^{buy}-V_W^{sell}
 `UNKNOWN` volume and count remain visible but are excluded from signed flow and
 cannot create a directional normalized-aggression result.
 
-### Normalized Aggression, Penetration, and Velocity
+### Normalized Aggression, Penetration, and Flow Descriptors
 
 The existing weighted-depth implementation and its explicit weights are reused
 without redefinition. `WD_A(t0)` or `WD_B(t0)` is measured from the snapshot
@@ -2380,24 +2385,41 @@ that price. Thus partial execution can touch a level without consuming it, and
 consuming one resting order does not consume a price level when other displayed
 orders remain there.
 
-For direction (d), event velocity is measured in instrument quantity per
-same-direction, volume-owning observation:
+For direction (d), the currently implemented trade-size descriptor is measured
+in instrument quantity per same-direction, volume-owning trade observation:
 
 [
-EventVelocity_d=
+AverageAggressiveTradeSize_d=
 \frac{V_W^d}{DirectionalTradeCount_W^d}
 ]
 
-Clock velocity is separately measured in instrument quantity per exchange-time
-second:
+This is average aggressive trade size, not event-time velocity. It describes the
+mean size of observed directional aggressive trades and does not measure flow
+per normalized market event.
+
+A future event-flow rate is defined conceptually as:
 
 [
-ClockVelocity_d=
+EventFlowRate_d=
+\frac{V_W^d}{NormalizedMarketEventCount_{episode}}
+]
+
+Its denominator must count all relevant normalized market events spanning the
+episode, including non-trade events, rather than only directional trade
+observations. `AggressiveFlowWindow` currently retains reconciled volume-owning
+trade observations but not that complete market-event span/count. Therefore
+`EventFlowRate` is deferred and is not fabricated in Milestone G.
+
+Clock aggressive flow rate is separately measured in instrument quantity per
+exchange-time second:
+
+[
+ClockAggressiveFlowRate_d=
 \frac{V_W^d}{EndExchangeTime_W-StartExchangeTime_W}
 ]
 
-Clock velocity is unavailable when elapsed exchange time is zero. The two
-velocity units are never collapsed.
+Clock aggressive flow rate is unavailable when elapsed exchange time is zero.
+Average trade size and clock flow rate retain distinct denominators and units.
 
 ### Shock Features and Initial Classification
 
@@ -2420,8 +2442,8 @@ ShockFeatures
     normalization_unavailable_reason
     levels_touched
     levels_consumed
-    event_velocity
-    clock_velocity
+    average_aggressive_trade_size
+    clock_aggressive_flow_rate
     pre_spread
     pre_midprice
     pre_weighted_opposite_depth
@@ -2438,7 +2460,7 @@ maximum aggression-window observations   20
 minimum normalized aggression             0.5
 minimum aggressive volume                 100 instrument quantity units
 minimum levels consumed                   1
-minimum event velocity                    disabled
+minimum average aggressive trade size     disabled
 ```
 
 Every threshold is independently configurable or disabled, although at least

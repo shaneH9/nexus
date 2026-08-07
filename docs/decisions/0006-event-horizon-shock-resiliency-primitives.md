@@ -11,6 +11,8 @@ logic.
 The initial primitives need explicit answers to several ambiguous questions:
 
 * whether response horizons count events or milliseconds;
+* whether directional volume per directional trade is a trade-size descriptor
+  or an event flow rate;
 * whether an unclassified execution is forced into BUY or SELL flow;
 * whether primary replenishment uses raw or weighted depth;
 * whether replenishment above the pre-shock baseline is truncated;
@@ -37,6 +39,22 @@ selects economic-execution volume owners. Matching book/trade observations
 produce one trade-owned volume. A book-only owner has no authoritative
 aggressor field and remains UNKNOWN. Unresolved dual observations own no volume
 until a future explicit source policy can decide them.
+
+Directional aggressive volume divided by directional trade count is named
+`AverageAggressiveTradeSize`, with units of instrument quantity per directional
+trade:
+
+```text
+AverageAggressiveTradeSize_d = V_d / N_directional_trades_d
+```
+
+It is not event-time velocity. A distinct future `EventFlowRate` will use
+directional aggressive volume divided by the count of all relevant normalized
+market events spanning the episode. `AggressiveFlowWindow` currently retains
+only reconciled volume-owning trade observations, so it cannot supply that
+denominator and no event-flow rate is fabricated. The separately implemented
+`ClockAggressiveFlowRate` remains directional aggressive volume divided by
+elapsed exchange-time seconds and is unavailable for zero elapsed time.
 
 Normalized aggression reuses existing weighted depth. Primary replenishment
 ratio instead uses raw aggregate depth over configured current-rank K levels:
@@ -70,6 +88,13 @@ calibration can be performed on historical distributions rather than fixtures.
 Rejected as the primary definition because market activity varies sharply and
 the original strategy studies market response after aggressive events. Clock
 elapsed values are still retained for comparison.
+
+### Directional Trade Count as Event-Flow Denominator
+
+Rejected because directional trades are only a subset of the normalized market
+events spanning an episode. Dividing by that count measures average directional
+trade size, not flow per event. A true event-flow rate remains deferred until an
+explicit all-market-event span/count is supplied.
 
 ### Infer Aggressor Side from Resting Book Side
 
@@ -108,6 +133,12 @@ and reproducible under explicit versions. Exact unavailable states prevent
 missing futures, zero denominators, and unknown flow from becoming fabricated
 zeros or infinities. Event and clock recovery can be compared without mixing
 units.
+
+Shock features now name average aggressive trade size and clock aggressive flow
+rate explicitly. The former threshold retains its original computation and
+inclusive comparison semantics under the corrected
+`minimum_average_aggressive_trade_size` name. No `EventFlowRate` field exists
+until its complete normalized-market-event denominator can be represented.
 
 Callers must provide a correctly bounded aggression episode, the matching
 pre-window snapshot, atomic execution transition boundaries, within-episode

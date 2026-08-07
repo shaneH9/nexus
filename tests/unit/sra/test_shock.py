@@ -142,8 +142,8 @@ def test_level_penetration_distinguishes_touched_from_fully_consumed() -> None:
     assert penetration.consumed_prices == (Decimal("100.01"),)
 
 
-def test_event_and_exchange_clock_velocity_remain_separate() -> None:
-    """Directional event count and irregular exchange duration should yield distinct units."""
+def test_average_trade_size_and_clock_flow_rate_remain_separate() -> None:
+    """Directional trade count and exchange duration should yield distinct units."""
     pre = snapshot(0, bids=(("100.00", "300"),))
     end = snapshot(3, bids=(("100.00", "150"),))
     window = build_aggressive_flow_window(
@@ -158,8 +158,54 @@ def test_event_and_exchange_clock_velocity_remain_separate() -> None:
 
     features = build_shock_features(window, normalized, penetration, pre, end)
 
-    assert features.event_velocity == Decimal("75")
-    assert features.clock_velocity == Decimal("75000")
+    assert features.average_aggressive_trade_size == Decimal("75")
+    assert features.clock_aggressive_flow_rate == Decimal("75000")
+
+
+@pytest.mark.parametrize(
+    ("minimum_average_trade_size", "expected"),
+    (("74", True), ("75", True), ("76", False)),
+)
+def test_average_aggressive_trade_size_threshold_preserves_old_semantics(
+    minimum_average_trade_size: str,
+    expected: bool,
+) -> None:
+    """The renamed threshold should still compare V_d/N_directional_trades inclusively."""
+    pre = snapshot(0, bids=(("100.00", "300"),))
+    end = snapshot(3, bids=(("100.00", "150"),))
+    window = build_aggressive_flow_window(
+        (
+            _observed_trade(1, "50", AggressorSide.SELL),
+            _observed_trade(3, "100", AggressorSide.SELL),
+        )
+    )
+    normalized = calculate_normalized_aggression(ShockDirection.SELL, window, pre, end)
+    assert normalized is not None
+    features = build_shock_features(
+        window,
+        normalized,
+        calculate_level_penetration(ShockDirection.SELL, ()),
+        pre,
+        end,
+    )
+    classification = classify_shock(
+        features,
+        ShockDetectionConfig(
+            minimum_normalized_aggression=None,
+            minimum_aggressive_volume=None,
+            minimum_levels_consumed=None,
+            minimum_average_aggressive_trade_size=Decimal(minimum_average_trade_size),
+        ),
+    )
+
+    assert classification.is_candidate is expected
+    average_size_rule = next(
+        result
+        for result in classification.rule_results
+        if result.rule is ShockDetectionRule.AVERAGE_AGGRESSIVE_TRADE_SIZE
+    )
+    assert average_size_rule.observed == Decimal("75")
+    assert average_size_rule.passed is expected
 
 
 @pytest.mark.parametrize(
