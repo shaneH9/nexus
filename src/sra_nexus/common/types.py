@@ -81,6 +81,18 @@ class ReplenishmentEpisodeId(_UuidIdentifier):
     """Stable internal identifier for one price-level replenishment episode."""
 
 
+class ResearchObservationId(_UuidIdentifier):
+    """Stable internal identifier for one immutable historical research row."""
+
+
+class ResearchSplitId(_UuidIdentifier):
+    """Stable internal identifier for one chronological research split."""
+
+
+class PermutationTestId(_UuidIdentifier):
+    """Stable internal identifier for one reproducible permutation test."""
+
+
 class _OpaqueStringIdentifier(RootModel[str]):
     """Immutable typed wrapper for a provider-defined opaque identifier."""
 

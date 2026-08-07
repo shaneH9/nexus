@@ -4405,6 +4405,9 @@ shock_pairs
 sra_states
 toxicity_vectors
 market_regimes
+research_datasets
+research_dataset_manifests
+permutation_test_results
 ```
 
 ## Models
@@ -4494,6 +4497,17 @@ src/sra_nexus/
         absorption.py
         comparison.py
         state.py
+
+    research/
+        enums.py
+        models.py
+        features.py
+        labels.py
+        dataset.py
+        export.py
+        splits.py
+        permutation.py
+        multiple_testing.py
 
     regimes/
         market_regime.py
@@ -4742,7 +4756,364 @@ No SRA logic is required for this first milestone.
 
 ---
 
-# 73. Implementation Status
+# 73. Historical Research Methodology
+
+Milestone K is a research/evaluation layer, not an alpha model. Its primary
+scientific question is whether failed-aggression and related SRA features
+contain out-of-sample information about future price movement under a
+market-structure-aware null. It is designed to support falsification rather
+than to optimize a favorable backtest.
+
+The layer does not train a model, infer a trade direction, size capital,
+simulate execution, subtract costs or taxes, call a provider, or submit an
+order. Initial labels are gross market-response labels. NewsState fusion,
+economic viability after costs, formal baseline-plus-SRA model comparison, and
+portfolio use remain later milestones.
+
+## ResearchObservation and SRAFeatureSnapshot
+
+`ResearchObservation` is one immutable causal row:
+
+```text
+ResearchObservation
+{
+    observation_id
+    instrument_id
+    venue
+
+    feature_event_reference
+    feature_exchange_time
+    feature_process_time
+    feature_available_at_process_time
+
+    prediction_anchor_event_index
+    prediction_anchor_event_reference
+    prediction_anchor_exchange_time
+    prediction_anchor_process_time
+
+    shock_1_id
+    shock_2_id
+    pair_id
+
+    feature_version_bundle[]
+    features
+    labels[]
+
+    maximum_label_horizon_events
+    label_window_end_event_index
+    source_data_identifiers[]
+    dataset_version
+}
+```
+
+Features and labels remain separate nested contracts even when exported as one
+row. `SRAFeatureSnapshot` preserves components rather than retaining only
+composite scores:
+
+```text
+SRAFeatureSnapshot
+{
+    direction
+    normalized_aggression_1
+    normalized_aggression_2
+    aggression_ratio
+
+    effectiveness_by_horizon[]       # AE_1, AE_2, DeltaAE, relative change
+    resiliency_by_horizon[]           # RR_1, RR_2, DeltaRR
+    recovery_time_deltas[]            # event, exchange, process units
+    absorption_by_horizon[]           # AbsEff_1, AbsEff_2, DeltaAbsEff
+
+    liquidity_credibility?            # LC_1, LC_2, DeltaLC and raw components
+    toxicity?                         # raw/bounded toxicity components and score
+    baseline                          # ordinary microstructure state
+
+    feature_availability[]
+    feature_available_at_process_time
+    feature_version
+}
+```
+
+The toxicity snapshot retains flow persistence, shock persistence, directional
+flow coverage, unknown-flow share, raw and bounded replenishment failure,
+attacked- and opposite-side NNLP, withdrawal pressure, raw and bounded spread
+expansion, raw and bounded volatility jump, `ToxicityScore`, and optional
+`DeltaToxicity`. The liquidity-credibility snapshot retains score changes plus
+quantity-weighted order credibility, execution, withdrawal, order/quantity
+survival, replenishment, cycle, and credible-depth components where the
+optional side score is available. Missing optional feature families remain
+`None`; they are never silently imputed.
+
+Stable exported names derive from explicit contract fields and horizons, for
+example `delta_ae_h10`, `delta_rr_h25`, `delta_tau_75_events`,
+`liquidity_credibility_2`, `delta_liquidity_credibility`,
+`flow_persistence`, and `toxicity_score`. Ambiguous numbered score names are not
+used.
+
+## Feature Availability and Prediction Anchor
+
+Some SRA features require post-shock evidence. Consequently, shock 2 time is
+not automatically a valid observation time. For selected feature families:
+
+[
+FeatureAvailableAt=
+\max_f ProcessTimeRequired_f
+]
+
+Every family carries `FeatureAvailability` with its name, process-time
+availability, and source-data identity. The prediction anchor is the first
+caller-supplied normalized market state, at or after the minimum feature event
+index, whose `process_time` is at least `FeatureAvailableAt`. The anchor is not
+backdated to a shock or comparison boundary.
+
+The hard invariant is:
+
+[
+AvailableAtProcessTime_f\le PredictionAnchorProcessTime
+]
+
+for every included feature. `ResearchObservation` and the intermediate feature
+build result both reject violations. The baseline state at the anchor is itself
+one included feature family, so the final snapshot availability equals the
+anchor process time when that state is the latest evidence.
+
+`SRAFeatureSnapshotBuilder` imports no label code. It can inspect only completed
+SRA feature objects and market states through the chosen anchor. The
+`LabelBuilder` is the only component given future market states for labels.
+Changing a future price path must not change the feature snapshot.
+
+## Gross Forward Labels
+
+Initial configurable horizons are `10, 25, 50, 100, 250` normalized market
+events. They are configuration values rather than fields hard-coded into the
+label class. With prediction-anchor midprice (M_t):
+
+[
+ForwardReturn(h)=\frac{M_{t+h}-M_t}{M_t}
+]
+
+The raw return is always retained. For shock direction encoded as BUY `= +1`
+and SELL `= -1`:
+
+[
+ReversalDirection=-ShockDirection
+]
+
+[
+ReversalAdjustedReturn(h)=
+ReversalDirection\cdot ForwardReturn(h)
+]
+
+Positive adjusted return means movement consistent with failed-aggression
+reversal. It is a future label, not a feature or trade instruction.
+
+For all exact normalized states from the anchor through horizon (H), including
+the anchor's zero return:
+
+[
+MFE(H)=\max_{0\le j\le H}ReversalAdjustedReturn(j)
+]
+
+`MaximumAdverseExcursion` is a nonnegative magnitude, explicitly distinct from
+mean absolute error:
+
+[
+MaximumAdverseExcursion(H)=
+\max_{0\le j\le H}\max(-ReversalAdjustedReturn(j),0)
+]
+
+The label also retains the first event offset and exchange seconds to MFE.
+`ReversalSuccess(h)` is true only when the horizon adjusted return is strictly
+positive; zero is not success.
+
+If the exact endpoint, an intervening normalized event, or a required midprice
+is unavailable, the horizon receives an `UnavailableForwardLabel` with a typed
+reason. It is never shortened or replaced with a partial return. Milestone K
+does not deduct spreads, broker commissions, fees, taxes, slippage, impact, or
+other costs from these gross labels.
+
+## Baseline Features
+
+The anchor snapshot retains spread, midprice, microprice, dimensionless
+microprice offset, K-level OBI, raw bid/ask depth, and separately weighted
+bid/ask depth. The offset is:
+
+[
+MicropriceOffset=\frac{Microprice-Midprice}{Midprice}
+]
+
+For configured backward event horizon (b):
+
+[
+RecentReturn(b)=\frac{M_t-M_{t-b}}{M_{t-b}}
+]
+
+Recent event-time volatility uses the existing unannualized arithmetic-return
+RMS convention over the exact past path `(t-b, ..., t)`. Both features use only
+states at or before the prediction anchor. Missing past state or price remains
+missing. These baseline columns permit SRA evidence to be compared with simpler
+spread, OBI, microprice, return, volatility, and depth explanations.
+
+## Dataset Construction, Identity, and Export
+
+`ResearchDatasetBuilder` consumes completed feature objects, calculates latest
+availability, chooses the anchor, constructs features, delegates future state
+only to `LabelBuilder`, constructs labels and the row, then revalidates
+no-lookahead invariants. It contains no model training or SQL.
+
+The dataset version is:
+
+```text
+sra-research-dataset-v1
+```
+
+Each row also retains every contributing feature-family version and source-data
+identity. `DatasetManifest` contains the dataset version, explicit UTC creation
+time, sorted instruments and venues, anchor-time coverage, observation count,
+feature versions, label and dataset configurations, source-data identifiers,
+and optional code revision.
+
+Initial deterministic export is UTF-8 JSONL using only the standard library.
+The first record is the manifest and later records are observations sorted by:
+
+```text
+instrument_id
+prediction_anchor_event_index
+observation_id
+```
+
+JSON keys are lexicographically sorted, exact Decimal values use deterministic
+decimal strings, and unavailable values are JSON `null`.
+`created_at` is explicit and included; identical manifest/configuration/data
+therefore produce byte-identical output.
+
+## Chronological Walk-Forward Splits
+
+There is no random train/test split helper. Rows are ordered by prediction
+anchor process time, instrument, anchor event index, and observation ID.
+Training always precedes testing.
+
+`EXPANDING` keeps the first historical training start and grows its training
+region at each fold. `ROLLING` retains only the explicitly configured trailing
+number of observations. Test size and fold step are configured independently.
+Each `WalkForwardSplit` retains split ID and mode, UTC train/test boundaries,
+included train/test IDs, purged IDs, embargoed IDs, maximum label horizon,
+embargo parameters, and split version.
+
+Purging is applied per `(instrument_id, venue)` after embargo determines the
+first retained test anchor. A training row's configured maximum label interval
+is `(training_anchor, label_window_end]`. The row is purged exactly when:
+
+```text
+training.label_window_end_event_index
+>=
+first retained test prediction_anchor_event_index
+```
+
+Thus a training label that touches or crosses the test boundary cannot use a
+test-region price. Split configuration must equal the rows' maximum label
+horizon; a smaller claimed purge horizon is rejected.
+
+Embargo is a gap immediately after the last candidate training anchor for the
+same instrument and venue. With event embargo (E), a candidate test row is
+excluded exactly when:
+
+```text
+0 < test_anchor_event_index - last_train_anchor_event_index <= E
+```
+
+An optional exchange-time embargo independently excludes a candidate whose
+elapsed exchange seconds from that boundary are at most the configured value.
+The two restrictions form a union. A candidate for an instrument with no prior
+training row is not given a fabricated boundary. Embargoed rows are not moved
+into training, and purging is then measured against the first test row that
+remains.
+
+## Block Label Permutation
+
+Permutation testing is the primary initial significance framework because
+market observations are serially dependent, volatility-clustered, seasonal,
+shock-clustered, regime-dependent, and carry overlapping labels. IID row
+shuffling would destroy those properties and is not implemented as the default
+null.
+
+For a declared statistic (T), features and row order remain fixed. Within each
+permutation stratum, chronological labels are partitioned into consecutive
+event-count blocks of configured size. Whole label blocks are reassigned to the
+fixed feature rows; label order inside each block is unchanged. A final partial
+block remains a whole block. This tests the null that the declared feature/label
+alignment is exchangeable at the block-assignment level while preserving more
+local label dependence than row-wise shuffle.
+
+The initial implementation supports normalized-event-count blocks. Predeclared
+sensitivity values are `25, 50, 100, 250` observations. They are engineering
+defaults and must not be searched for the lowest p-value. Configuration rejects
+`block_size < max_label_horizon_events` because of overlapping forward labels.
+Exchange-time block construction and session block construction are deferred.
+
+Permutation occurs within instrument by default. Cross-instrument exchange is
+an explicit opt-in and is marked in result metadata. If the caller supplies
+real `session_id` values, `session_restricted=true` adds them to the strata;
+missing session metadata is an error and sessions are never inferred or
+fabricated. An optional caller-supplied generic stratum is already part of the
+interface for future volatility, time-of-day, spread, or liquidity regime
+restrictions; Milestone K performs no regime inference.
+
+`MONTE_CARLO` uses standard-library `random.Random` with an explicit seed and
+draws exactly (B) valid block permutations, allowing repeated draws or the
+identity. `EXACT` enumerates the Cartesian product of every within-stratum block
+ordering, including identity, only when its factorial count does not exceed
+`max_exact_permutations`. Exact mode's count is the number of arrangements;
+Monte Carlo mode's count is the configured sample size.
+
+For a greater-tail statistic, ties are included and the empirical p-value is:
+
+[
+p=\frac{1+\#\{T_b\ge T_{observed}\}}{B+1}
+]
+
+The less alternative uses `<=`. The initial two-sided alternative compares
+`abs(T_b) >= abs(T_observed)` around the statistic's declared zero null. The
+same plus-one equation is used consistently for sampled and enumerated nulls.
+
+Initial generic statistics are mean and median reversal-adjusted return,
+strict-positive reversal success rate, population covariance with a continuous
+feature, upper-minus-lower feature-quantile mean return, and mean return under a
+caller-predeclared condition such as `DeltaAE < 0 AND DeltaRR > 0`. The
+condition and thresholds are inputs, not fitted by this layer.
+
+Each `PermutationTestResult` identifies statistic, horizon, block policy,
+instrument scope, split, seed, feature or condition, mode, and test version. It
+retains observed statistic, p-value, null mean, population standard deviation,
+and nearest-rank 5th/50th/95th percentiles where rank is `ceil(p * B)`. Null
+statistics are optional. Effect sizes are:
+
+[
+ObservedMinusNullMean=T_{observed}-Mean(T_b)
+]
+
+and, when null standard deviation is positive:
+
+[
+StandardizedEffect=\frac{T_{observed}-Mean(T_b)}{Std(T_b)}
+]
+
+The standardized value is not called a Sharpe ratio.
+
+Permutation nulls operate only inside one test fold; labels never cross a
+train/test boundary. Every fold result remains separately available. A helper
+may report the observation-count-weighted mean fold statistic, but it does not
+combine p-values or hide individual folds.
+
+Testing multiple features, conditions, horizons, block sizes, or folds creates
+multiple hypotheses. Results retain this metadata and simple utilities report
+raw p-values alongside Bonferroni and Benjamini-Hochberg FDR adjustments. The
+system does not choose whichever correction or block size makes a result
+significant. See
+[ADR 0010](decisions/0010-historical-research-methodology.md).
+
+---
+
+# 74. Implementation Status
 
 Repository scaffold: COMPLETE
 
@@ -4777,6 +5148,14 @@ Liquidity credibility: COMPLETE
 Toxicity analysis: COMPLETE
 
 Shock-pair analysis: COMPLETE
+
+Historical research dataset: COMPLETE
+
+Forward-return labeling: COMPLETE
+
+Walk-forward splitting: COMPLETE
+
+Permutation testing: COMPLETE
 
 Alpha model: NOT STARTED
 
