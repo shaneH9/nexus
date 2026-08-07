@@ -1,6 +1,6 @@
 {
   "experiment_name": "Milestone L deterministic fixture",
-  "experiment_version": "fixture-v1",
+  "experiment_version": "fixture-v2",
   "created_at": "2026-08-03T00:00:00Z",
   "instruments": ["11111111-1111-4111-8111-111111111111"],
   "venues": ["XNAS"],
@@ -57,6 +57,12 @@
     }
   ],
   "structural_boundaries": [],
+  "aggression_episode_config": {
+    "maximum_market_event_gap_between_executions": 4,
+    "maximum_exchange_time_gap_between_executions": "0.050",
+    "maximum_episode_market_events": 6,
+    "maximum_episode_exchange_seconds": "0.250"
+  },
   "shock_research_config": {
     "shock_detection": {
       "aggression_window_event_count": 20,
@@ -108,7 +114,7 @@
   },
   "walk_forward_config": {
     "mode": "EXPANDING",
-    "minimum_train_observations": 2,
+    "minimum_train_observations": 1,
     "rolling_train_observations": null,
     "test_observations": 2,
     "step_observations": 2,

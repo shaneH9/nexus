@@ -1,5 +1,12 @@
 """Historical datasets, causal labels, walk-forward splits, and permutation tests."""
 
+from sra_nexus.research.aggression_episodes import (
+    AggressionEpisode,
+    AggressionEpisodeBuilder,
+    AggressionEpisodeConfig,
+    ReconciledAggressiveExecution,
+    analyze_historical_aggression_episode,
+)
 from sra_nexus.research.dataset import (
     DatasetManifest,
     ResearchDataset,
@@ -39,6 +46,10 @@ from sra_nexus.research.features import (
     evaluate_failed_aggression_condition,
     feature_availability_from_input,
     select_prediction_anchor,
+)
+from sra_nexus.research.historical_pairing import (
+    HistoricalShockCandidate,
+    find_most_recent_prior_comparable_shock,
 )
 from sra_nexus.research.historical_runner import (
     HistoricalResearchRunner,
@@ -128,6 +139,9 @@ __all__ = [
     "RESEARCH_DATASET_VERSION",
     "WALK_FORWARD_SPLIT_VERSION",
     "AbsorptionFeature",
+    "AggressionEpisode",
+    "AggressionEpisodeBuilder",
+    "AggressionEpisodeConfig",
     "AdjustedResearchPValue",
     "BackwardMarketFeature",
     "BaselineFeatureSnapshot",
@@ -148,6 +162,7 @@ __all__ = [
     "HistoricalDryRunReport",
     "HistoricalResearchReport",
     "HistoricalResearchRunner",
+    "HistoricalShockCandidate",
     "HistoricalSourceSpec",
     "HistoricalStructuralBoundary",
     "HypothesisStatus",
@@ -185,6 +200,7 @@ __all__ = [
     "ResearchStatistic",
     "ResearchStatisticName",
     "ResearchRunArtifacts",
+    "ReconciledAggressiveExecution",
     "ResiliencyFeature",
     "ReversalSuccessRate",
     "SRAFeatureInput",
@@ -199,6 +215,7 @@ __all__ = [
     "WalkForwardSplit",
     "WalkForwardSplitter",
     "adjust_research_p_values",
+    "analyze_historical_aggression_episode",
     "build_permutation_blocks",
     "calculate_experiment_hash",
     "canonical_experiment_json",
@@ -207,6 +224,7 @@ __all__ = [
     "empirical_permutation_p_value",
     "evaluate_failed_aggression_condition",
     "feature_availability_from_input",
+    "find_most_recent_prior_comparable_shock",
     "export_research_dataset_jsonl",
     "generate_permuted_label_assignments",
     "permute_blocks_preserving_order",

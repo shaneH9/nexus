@@ -5295,12 +5295,63 @@ ResearchExperimentSpec
   -> deterministic JSON and Markdown artifacts
 ```
 
-The runner treats each matched displayed execution and trade as one explicit
-initial episode boundary. This is a pipeline policy, not a change to shock
-mathematics. Materialized shock UUIDs derive deterministically from immutable
-event boundaries, direction, and detection version. Pairs are adjacent
-same-segment candidates and use the true count of all normalized market events
-strictly between shock 1 end and shock 2 start.
+The provider-independent `AggressionEpisodeBuilder` groups chronological,
+reconciled economic executions into completed same-direction flow episodes.
+One episode may therefore contain multiple matched displayed executions and
+trade observations. The initial continuation policy is frozen in
+`AggressionEpisodeConfig`:
+
+```text
+maximum market-event gap between executions   4 normalized events
+maximum exchange-time gap between executions  0.050 seconds
+maximum episode span                          20 normalized events
+maximum episode duration                      0.250 exchange seconds
+```
+
+The market-event gap counts every normalized event strictly after the prior
+reconciled execution/trade boundary and before the next book execution. The
+episode span is inclusive from its first book-execution event through its final
+paired trade observation. Bounds are inclusive. A direction change, structural
+segment change, event/time gap above its bound, or proposed episode span above
+its bound starts a new episode. These are initial engineering values, not values
+optimized against historical returns.
+
+The existing `aggression_window_event_count` remains a separate cap on the
+number of reconciled volume-owning observations passed to `ShockResearchService`.
+It is not substituted for the all-normalized-market-event span denominator.
+
+`AggressorSide.UNKNOWN` never joins a BUY or SELL episode and is never inferred
+from resting book side. A reconciled UNKNOWN observation terminates any open
+directional episode, is retained in quality diagnostics, and remains outside
+directional episode construction.
+
+An episode's `pre_snapshot` is the reconstructed book immediately before its
+first included `BookEvent.EXECUTE`. Its `end_snapshot` is the book immediately
+after its final included execution; the paired canonical `TradeEvent` is
+non-mutating under the existing normalization contract. The episode is not
+complete or process-time available before its final included trade observation.
+Only after that boundary does the runner begin event-indexed impact and
+resiliency response horizons.
+
+The runner passes every episode observation and execution, plus every execution
+post-snapshot as a within-episode depletion state, to the existing
+`ShockResearchService`. It does not reimplement normalized aggression, level
+penetration, impact, or resiliency. Materialized shock UUIDs continue to derive
+deterministically from immutable event boundaries, direction, and detection
+version.
+
+For each current shock candidate, the runner searches backward within its
+structural segment and asks `ShockPairService` to assess candidates in
+most-recent-first order. It stops at the first accepted prior comparable shock.
+An incompatible intervening shock—including one in the opposite direction—does
+not automatically block an older compatible same-direction shock. The true pair
+event distance remains:
+
+```text
+current.start_event_index - prior.end_event_index - 1
+```
+
+No pair crosses a structural segment and no all-pairs result set is generated.
 
 Warm-up events may establish the book and backward-looking features, but no
 observation is emitted before `research_start`. Exact event-index state at the
@@ -5312,9 +5363,13 @@ implementing those later layers now.
 `ResearchExperimentSpec` is immutable and includes name/version, deterministic
 creation time, instruments, venues, half-open UTC scope, session segments,
 warm-up count, exact source specs, configured structural boundaries, unchanged
-SRA/shock-pair/dataset policies, label horizons, walk-forward purge/embargo,
-named permutation configurations, ordered hypotheses, output policy, seed, and
-limitations.
+SRA/shock-pair/dataset policies, the aggression-episode continuation policy,
+label horizons, walk-forward purge/embargo, named permutation configurations,
+ordered hypotheses, output policy, seed, and limitations. The grouping policy
+executes the already intended flow-window hypothesis. It is part of the
+preregistered first real-data experiment while that experiment remains unrun.
+After real outcomes are observed, changing any grouping parameter creates a new
+experiment and hypothesis version.
 
 Every `ResearchHypothesis` preregisters ID, description, condition or continuous
 feature, expected sign, statistic, one forward horizon, alternative, and one
@@ -5342,6 +5397,9 @@ hypothesis identity. The identity is:
 ```text
 ExperimentHash = SHA256(canonical_experiment_json)
 ```
+
+Changing the episode event gap, exchange-time gap, maximum episode event span,
+or maximum episode exchange duration changes this hash.
 
 `ResearchRunId` is UUIDv5 over the experiment hash, SHA-256 of the deterministic
 dataset manifest, and Git revision (or explicit `UNKNOWN`). It does not rely on
@@ -5373,8 +5431,10 @@ fabricated p-values.
 
 `HistoricalDataQualityReport` discloses gaps, regressions, duplicates, resets,
 structural breaks, invalid records, one-sided states, unknown aggressor counts,
-directional coverage, unknown-flow share, missing hypothesis features, and
-unavailable labels. It is not a pass/fail marketing summary.
+directional coverage, unknown-flow share, reconciled trade-observation count,
+aggression-episode count, mean and maximum observations per episode, missing
+hypothesis features, and unavailable labels. It is not a pass/fail marketing
+summary.
 
 The immutable output directory is:
 

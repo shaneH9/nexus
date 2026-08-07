@@ -55,6 +55,7 @@ and change only preregistered inputs before examining labels:
 - dataset/schema and instrument/venue mapping;
 - half-open UTC research range and session scope;
 - warm-up count and known halt/corporate-action boundaries;
+- frozen aggression-episode event-gap, exchange-gap, and maximum-span policy;
 - frozen SRA, label, purge, and embargo configurations;
 - each named permutation configuration and seed;
 - every primary, secondary, and baseline hypothesis;

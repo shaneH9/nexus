@@ -19,6 +19,7 @@ from sra_nexus.market_data.historical import (
     HistoricalSessionSegment,
 )
 from sra_nexus.market_data.providers.databento import DatabentoMboCsvConfig
+from sra_nexus.research.aggression_episodes import AggressionEpisodeConfig
 from sra_nexus.research.dataset import ResearchDatasetConfig
 from sra_nexus.research.enums import PermutationAlternative
 from sra_nexus.research.permutation import PermutationTestConfig
@@ -180,6 +181,9 @@ class ResearchExperimentSpec(ContractModel):
     warmup_event_count: int = Field(default=0, ge=0)
     sources: tuple[HistoricalSourceSpec, ...]
     structural_boundaries: tuple[HistoricalStructuralBoundary, ...] = ()
+    aggression_episode_config: AggressionEpisodeConfig = Field(
+        default_factory=AggressionEpisodeConfig
+    )
     shock_research_config: ShockResearchConfig
     shock_pair_config: ShockPairConfig
     dataset_config: ResearchDatasetConfig

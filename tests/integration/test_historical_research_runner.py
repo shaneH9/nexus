@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from decimal import Decimal
 from pathlib import Path
 
 import pytest
@@ -51,8 +52,12 @@ def test_full_pipeline_writes_all_artifacts_and_uses_only_test_folds(
     artifacts = HistoricalResearchRunner(spec).run()
 
     assert artifacts.report.events_processed == 41
-    assert artifacts.report.observations_generated == 7
-    assert len(artifacts.report.walk_forward_splits) == 3
+    assert artifacts.report.observations_generated == 3
+    assert len(artifacts.report.walk_forward_splits) == 1
+    assert artifacts.report.data_quality.reconciled_trade_observation_count == 8
+    assert artifacts.report.data_quality.aggression_episode_count == 4
+    assert artifacts.report.data_quality.mean_observations_per_aggression_episode == 2.0
+    assert artifacts.report.data_quality.maximum_observations_per_aggression_episode == 2
     assert artifacts.elapsed_processing_seconds >= 0
     assert {
         Path(artifacts.experiment_json).name,
@@ -69,8 +74,14 @@ def test_full_pipeline_writes_all_artifacts_and_uses_only_test_folds(
         "results.json",
         "report.md",
     }
+    assert tuple(result.status for result in artifacts.report.hypothesis_results) == (
+        HypothesisStatus.UNAVAILABLE,
+        HypothesisStatus.RUN,
+    )
     for result in artifacts.report.hypothesis_results:
-        assert result.status is HypothesisStatus.RUN
+        if result.status is HypothesisStatus.UNAVAILABLE:
+            assert result.unavailable_reason == "no valid out-of-sample fold evidence"
+            continue
         assert result.observation_count == sum(
             fold.observation_count
             for fold in result.fold_results
@@ -154,11 +165,27 @@ def test_experiment_hash_changes_with_predeclared_horizon_or_block_size() -> Non
         *spec.permutation_configurations[1:],
     )
     block_spec = ResearchExperimentSpec.model_validate(block_payload)
+    episode_specs = []
+    for update in (
+        {"maximum_market_event_gap_between_executions": 3},
+        {"maximum_exchange_time_gap_between_executions": Decimal("0.040")},
+        {"maximum_episode_market_events": 5},
+        {"maximum_episode_exchange_seconds": Decimal("0.200")},
+    ):
+        episode_payload = spec.model_dump(mode="python")
+        episode_payload["aggression_episode_config"] = spec.aggression_episode_config.model_copy(
+            update=update
+        )
+        episode_specs.append(ResearchExperimentSpec.model_validate(episode_payload))
 
     assert calculate_experiment_hash(spec) == calculate_experiment_hash(same)
     assert calculate_experiment_hash(spec) == calculate_experiment_hash(relocated)
     assert calculate_experiment_hash(spec) != calculate_experiment_hash(horizon_spec)
     assert calculate_experiment_hash(spec) != calculate_experiment_hash(block_spec)
+    assert all(
+        calculate_experiment_hash(spec) != calculate_experiment_hash(episode_spec)
+        for episode_spec in episode_specs
+    )
 
 
 def test_runner_rejects_expected_hash_matched_but_corrupt_sequence(

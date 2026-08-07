@@ -9,7 +9,12 @@ from typing import Self
 
 from pydantic import Field, model_validator
 
-from sra_nexus.common.models import ContractModel, NonBlankStr, UtcDatetime
+from sra_nexus.common.models import (
+    ContractModel,
+    NonBlankStr,
+    NonNegativeFiniteFloat,
+    UtcDatetime,
+)
 from sra_nexus.common.types import InstrumentId
 from sra_nexus.market_data.events import MarketEvent
 from sra_nexus.reference.models import Instrument
@@ -211,6 +216,10 @@ class HistoricalDataQualityReport(ContractModel):
     invalid_records: tuple[NonBlankStr, ...] = ()
     one_sided_book_periods: int = Field(default=0, ge=0)
     missing_aggressor_side_count: int = Field(default=0, ge=0)
+    reconciled_trade_observation_count: int = Field(default=0, ge=0)
+    aggression_episode_count: int = Field(default=0, ge=0)
+    mean_observations_per_aggression_episode: NonNegativeFiniteFloat = 0.0
+    maximum_observations_per_aggression_episode: int = Field(default=0, ge=0)
     directional_flow_coverage: float = Field(default=0.0, ge=0.0, le=1.0)
     unknown_flow_share: float = Field(default=0.0, ge=0.0, le=1.0)
     missing_feature_count: int = Field(default=0, ge=0)

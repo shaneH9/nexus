@@ -58,11 +58,43 @@ construction, existing walk-forward splitting, and existing corrected
 permutation testing. It does not contain provider parsing or reimplement those
 mathematics.
 
+The runner constructs provider-independent aggression episodes before invoking
+the SRA service. A completed episode may contain multiple same-direction
+reconciled executions. The initial inclusive continuation bounds are four
+normalized events between completed execution/trade boundaries, 0.050 exchange
+seconds between executions, 20 normalized events in the inclusive episode span,
+and 0.250 exchange seconds for total episode duration. A direction or structural
+segment change, or exceeding any bound, starts a new episode. These are
+preregistered engineering values and were not selected from historical-return
+results.
+
+The existing SRA maximum observation count is enforced independently of these
+all-market-event and clock spans; the two units are not conflated.
+
+UNKNOWN aggression remains outside directional episodes and terminates an open
+episode when it interrupts continuity. The episode baseline is the snapshot
+immediately before its first execution. Its end snapshot is immediately after
+its last included book execution because the paired normalized trade event does
+not mutate displayed state. All included observations/executions and all
+within-episode post-execution depletion snapshots pass unchanged to
+`ShockResearchService`. Response horizons start only after the final paired
+trade observation, and the completed episode is not available before that
+observation's process time.
+
+For each current shock, the runner searches prior candidates in reverse
+chronological order within the same structural segment and stops at the first
+candidate accepted by `ShockPairService`. An intervening opposite-direction or
+otherwise incomparable shock does not block an older comparable same-direction
+shock. Event distance remains the count of all normalized events strictly
+between the prior shock end and current shock start; no all-pairs result set is
+created.
+
 `ResearchExperimentSpec` preregisters exact source bytes, scope, SRA/dataset
-configuration, purge/embargo, named null configurations, hypotheses, output
-policy, and seed. Canonical JSON SHA-256 is the `ExperimentHash`. `ResearchRunId`
-derives from experiment hash, deterministic dataset manifest identity, and code
-revision.
+configuration, aggression-episode configuration, purge/embargo, named null
+configurations, hypotheses, output policy, and seed. Canonical JSON SHA-256 is
+the `ExperimentHash`, so any event-gap, clock-gap, or maximum-span change changes
+experiment identity. `ResearchRunId` derives from experiment hash, deterministic
+dataset manifest identity, and code revision.
 
 Only test-fold observations contribute to statistical evidence. Permutation
 settings pass unchanged to Milestone K. Fold results remain separate. An
@@ -77,6 +109,18 @@ model, threshold search, random train/test split, NewsState fusion, portfolio
 allocation, execution simulator, broker integration, or live trading.
 
 ## Alternatives Considered
+
+### Treat every reconciled execution as a complete aggression episode
+
+Rejected because it collapses the intended aggressive-flow window to one trade
+and prevents aggregate normalized aggression and multi-execution level
+penetration from being evaluated by the existing SRA service.
+
+### Compare only adjacent chronological shock candidates
+
+Rejected because an intervening opposite-direction or otherwise incomparable
+shock is not the most recent prior comparable same-direction shock required by
+the accepted Milestone H policy.
 
 ### Modify SRA thresholds after viewing historical returns
 
@@ -135,3 +179,10 @@ The framework can produce weak, null, or unavailable findings without changing
 strategy definitions. That is the intended empirical outcome path, not a runner
 failure. Real-data validation remains incomplete until licensed historical data
 is supplied and successfully processed.
+
+This correction executes the flow-window concept already intended by the frozen
+SRA hypothesis; it does not alter any equation, threshold, engineering-prior
+weight, or permutation method. Because no real-data experiment has yet run, the
+episode grouping remains part of the preregistered first real-data experiment.
+Once outcomes are observed, a grouping-policy change requires a new experiment
+and hypothesis version.

@@ -32,6 +32,12 @@ from sra_nexus.market_data.providers.base import HistoricalMarketDataAdapter
 from sra_nexus.market_data.providers.databento import DatabentoMboCsvAdapter
 from sra_nexus.market_data.providers.databento.adapter import HistoricalDataValidationError
 from sra_nexus.market_data.snapshots import BookSnapshot
+from sra_nexus.research.aggression_episodes import (
+    AggressionEpisode,
+    AggressionEpisodeBuilder,
+    ReconciledAggressiveExecution,
+    analyze_historical_aggression_episode,
+)
 from sra_nexus.research.dataset import (
     ResearchDataset,
     ResearchDatasetBuilder,
@@ -48,6 +54,10 @@ from sra_nexus.research.experiment import (
     calculate_experiment_hash,
 )
 from sra_nexus.research.features import SRAFeatureInput, evaluate_failed_aggression_condition
+from sra_nexus.research.historical_pairing import (
+    HistoricalShockCandidate,
+    find_most_recent_prior_comparable_shock,
+)
 from sra_nexus.research.labels import ForwardMarketResponseLabel, UnavailableForwardLabel
 from sra_nexus.research.multiple_testing import ResearchPValue, adjust_research_p_values
 from sra_nexus.research.permutation import (
@@ -70,38 +80,15 @@ from sra_nexus.research.results import (
 )
 from sra_nexus.research.splits import WalkForwardSplit, WalkForwardSplitter
 from sra_nexus.sra.comparison import ShockPairService
-from sra_nexus.sra.enums import ShockDirection, ShockResearchStatus
-from sra_nexus.sra.service import ShockResearchResult, ShockResearchService
+from sra_nexus.sra.enums import ShockResearchStatus
+from sra_nexus.sra.service import ShockResearchService
 from sra_nexus.sra.shock import BookExecutionState
-from sra_nexus.sra.shock_pair import ShockPairSpan
 from sra_nexus.sra.state import MarketStateObservation, market_event_reference
 from sra_nexus.sra.toxicity import IndexedMarketStateObservation
-from sra_nexus.sra.windows import (
-    AggressiveTradeObservation,
-    reconcile_aggressive_trade_observations,
-)
+from sra_nexus.sra.windows import reconcile_aggressive_trade_observations
 
 _RUN_NAMESPACE = UUID("42975b08-dc80-5cae-9859-7399a118ef90")
 _POOLED_SPLIT_NAMESPACE = UUID("662e5950-f660-5f45-b0c0-2489c2bb0806")
-
-
-@dataclass(frozen=True, slots=True)
-class _Episode:
-    observation: AggressiveTradeObservation
-    execution: BookExecutionState
-    end_snapshot: BookSnapshot
-    start_event_index: int
-    end_event_index: int
-    segment: int
-
-
-@dataclass(frozen=True, slots=True)
-class _Candidate:
-    result: ShockResearchResult
-    start_event_index: int
-    end_event_index: int
-    available_event_index: int
-    segment: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -168,6 +155,10 @@ class HistoricalResearchRunner:
         one_sided = 0
         directional_trades = 0
         unknown_trades = 0
+        reconciled_trade_observations = 0
+        aggression_episode_count = 0
+        aggression_episode_observations = 0
+        maximum_episode_observations = 0
         global_indices: dict[tuple[str, str], int] = {}
 
         for session_envelopes in _session_batches(envelopes):
@@ -183,6 +174,13 @@ class HistoricalResearchRunner:
             one_sided += session_result.one_sided_book_periods
             directional_trades += session_result.directional_trade_count
             unknown_trades += session_result.unknown_trade_count
+            reconciled_trade_observations += session_result.reconciled_trade_observation_count
+            aggression_episode_count += session_result.aggression_episode_count
+            aggression_episode_observations += session_result.aggression_episode_observation_count
+            maximum_episode_observations = max(
+                maximum_episode_observations,
+                session_result.maximum_observations_per_aggression_episode,
+            )
             reset_count += session_result.reset_count
             structural_break_count += session_result.structural_break_count
             for envelope in session_envelopes:
@@ -271,6 +269,14 @@ class HistoricalResearchRunner:
             ),
             one_sided_book_periods=one_sided,
             missing_aggressor_side_count=unknown_trades,
+            reconciled_trade_observation_count=reconciled_trade_observations,
+            aggression_episode_count=aggression_episode_count,
+            mean_observations_per_aggression_episode=(
+                0.0
+                if aggression_episode_count == 0
+                else aggression_episode_observations / aggression_episode_count
+            ),
+            maximum_observations_per_aggression_episode=maximum_episode_observations,
             directional_flow_coverage=(
                 0.0 if total_trades == 0 else directional_trades / total_trades
             ),
@@ -398,7 +404,7 @@ class HistoricalResearchRunner:
         state_by_index: dict[int, IndexedMarketStateObservation] = {}
         segment_by_index: dict[int, int] = {}
         pending: dict[str, tuple[BookExecutionState, int, int]] = {}
-        episodes: list[_Episode] = []
+        reconciled_executions: list[ReconciledAggressiveExecution] = []
         market_key = (str(first.event.instrument_id), first.event.venue)
         next_index = global_indices.get(market_key, 0)
         segment = 0
@@ -477,18 +483,23 @@ class HistoricalResearchRunner:
                     execution, start_index, execution_segment = matched
                     batch = reconcile_aggressive_trade_observations(execution.event, event)
                     if batch.observations:
-                        episodes.append(
-                            _Episode(
+                        reconciled_executions.append(
+                            ReconciledAggressiveExecution(
                                 observation=batch.observations[0],
                                 execution=execution,
-                                end_snapshot=current_snapshot,
-                                start_event_index=start_index,
-                                end_event_index=event_index,
+                                execution_event_index=start_index,
+                                observation_event_index=event_index,
                                 segment=execution_segment,
                             )
                         )
 
         global_indices[market_key] = next_index
+        episodes = AggressionEpisodeBuilder(
+            self._spec.aggression_episode_config,
+            maximum_observations=(
+                shock_service.config.shock_detection.aggression_window_event_count
+            ),
+        ).build(reconciled_executions)
         candidates = self._analyze_episodes(
             episodes,
             state_by_index,
@@ -497,25 +508,13 @@ class HistoricalResearchRunner:
         )
         observations: list[ResearchObservation] = []
         observation_sessions: dict[ResearchObservationId, str] = {}
-        for prior, current in zip(candidates, candidates[1:], strict=False):
-            if prior.segment != current.segment:
-                continue
-            first_shock = prior.result.liquidity_shock
-            second_shock = current.result.liquidity_shock
-            if first_shock is None or second_shock is None:
-                continue
-            comparison = pair_service.compare(
-                shock_1=first_shock,
-                shock_2=second_shock,
-                span=ShockPairSpan(
-                    event_distance=max(0, current.start_event_index - prior.end_event_index - 1)
-                ),
-                impacts_1=prior.result.impacts,
-                impacts_2=current.result.impacts,
-                resiliency_1=prior.result.resiliency,
-                resiliency_2=current.result.resiliency,
+        for candidate_index, current in enumerate(candidates):
+            comparison = find_most_recent_prior_comparable_shock(
+                current,
+                candidates[:candidate_index],
+                pair_service,
             )
-            if not comparison.comparison_available:
+            if comparison is None:
                 continue
             anchor_state = state_by_index.get(current.available_event_index)
             if anchor_state is None:
@@ -545,20 +544,29 @@ class HistoricalResearchRunner:
             unknown_trade_count=unknown_trades,
             reset_count=reset_count,
             structural_break_count=structural_break_count,
+            reconciled_trade_observation_count=len(reconciled_executions),
+            aggression_episode_count=len(episodes),
+            aggression_episode_observation_count=sum(
+                len(episode.observations) for episode in episodes
+            ),
+            maximum_observations_per_aggression_episode=max(
+                (len(episode.observations) for episode in episodes),
+                default=0,
+            ),
         )
 
     def _analyze_episodes(
         self,
-        episodes: Sequence[_Episode],
+        episodes: Sequence[AggressionEpisode],
         state_by_index: dict[int, IndexedMarketStateObservation],
         segment_by_index: dict[int, int],
         service: ShockResearchService,
-    ) -> tuple[_Candidate, ...]:
+    ) -> tuple[HistoricalShockCandidate, ...]:
         horizon = max(
             *service.config.impact.horizons_events,
             *service.config.resiliency.recovery_horizons_events,
         )
-        candidates: list[_Candidate] = []
+        candidates: list[HistoricalShockCandidate] = []
         for episode in episodes:
             responses: list[MarketStateObservation] = []
             for index in range(episode.end_event_index + 1, episode.end_event_index + horizon + 1):
@@ -566,24 +574,21 @@ class HistoricalResearchRunner:
                 if state is None or segment_by_index.get(index) != episode.segment:
                     break
                 responses.append(state.observation)
-            direction = (
-                ShockDirection.BUY
-                if episode.observation.aggressor_side is AggressorSide.BUY
-                else ShockDirection.SELL
-            )
-            result = service.analyze_episode(
-                direction=direction,
-                aggressive_observations=(episode.observation,),
-                pre_snapshot=episode.execution.pre_snapshot,
-                end_snapshot=episode.end_snapshot,
-                book_executions=(episode.execution,),
-                depletion_snapshots=(episode.execution.post_snapshot,),
-                response_observations=responses,
+            result = analyze_historical_aggression_episode(
+                episode,
+                responses,
+                service,
             )
             if result.status is ShockResearchStatus.SHOCK_CANDIDATE:
+                shock = result.liquidity_shock
+                resiliency = result.resiliency
+                if shock is None or resiliency is None:
+                    raise AssertionError("shock candidate unexpectedly lacks complete outputs")
                 candidates.append(
-                    _Candidate(
-                        result=result,
+                    HistoricalShockCandidate(
+                        shock=shock,
+                        impacts=result.impacts,
+                        resiliency=resiliency,
                         start_event_index=episode.start_event_index,
                         end_event_index=episode.end_event_index,
                         available_event_index=episode.end_event_index + horizon,
@@ -804,6 +809,10 @@ class _SessionResult:
     unknown_trade_count: int
     reset_count: int
     structural_break_count: int
+    reconciled_trade_observation_count: int
+    aggression_episode_count: int
+    aggression_episode_observation_count: int
+    maximum_observations_per_aggression_episode: int
 
 
 def derive_research_run_id(
@@ -966,6 +975,12 @@ def render_markdown_report(report: HistoricalResearchReport) -> str:
             f"- Directional flow coverage / unknown share: "
             f"{report.data_quality.directional_flow_coverage} / "
             f"{report.data_quality.unknown_flow_share}",
+            f"- Reconciled trade observations / aggression episodes: "
+            f"{report.data_quality.reconciled_trade_observation_count} / "
+            f"{report.data_quality.aggression_episode_count}",
+            f"- Mean / maximum observations per aggression episode: "
+            f"{report.data_quality.mean_observations_per_aggression_episode} / "
+            f"{report.data_quality.maximum_observations_per_aggression_episode}",
             f"- Missing feature share: {report.data_quality.missing_feature_share}",
             f"- Unavailable label share: {report.data_quality.unavailable_label_share}",
             "",
