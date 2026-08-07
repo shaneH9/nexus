@@ -3061,76 +3061,107 @@ See [ADR 0008](decisions/0008-mbo-liquidity-credibility.md).
 
 # 36. Flow Toxicity
 
-Toxicity attempts to measure persistent directional/informed flow likely to overwhelm replenishing liquidity.
+Milestone J toxicity is a descriptive **post-shock market-state research
+feature**. It measures observable evidence that aggressive flow is persistently
+directional, increasingly effective, and/or overwhelming opposing liquidity.
+It does not identify an informed trader, participant identity, intent,
+manipulation, insider activity, or illegal conduct.
 
-Do not initially compress it into one scalar.
+Toxicity is additional to, and does not redefine, normalized aggression,
+`LiquidityShock`, directional price impact, replenishment ratio, recovery time,
+aggressor effectiveness, `DeltaAE`, absorption efficiency, liquidity
+credibility, or credible depth. All raw components remain available; the
+optional scalar is a transparent engineering prior rather than an alpha model
+or trade instruction.
 
-Track a toxicity vector.
+For true normalized market events in a configured recent window, signed event
+flow is:
+
+```text
+OF_j = BUY aggressive volume_j - SELL aggressive volume_j
+```
+
+`UNKNOWN` aggressive volume is excluded from signed flow and retained
+separately. One signed value, including zero when no directional execution owns
+the event, exists for every normalized market event in the exact flow window.
+Sequence numbers and directional trade counts are not event indices.
 
 ---
 
 # 37. Flow Persistence
 
-[
-FP_t=
-\frac{
-|\sum OF_t|
-}{
-\sum |OF_t|+\epsilon
-}
-]
+```text
+FlowPersistence = abs(sum(OF_j)) / sum(abs(OF_j))
+```
+
+The configured positive epsilon is a zero-denominator guard. A positive natural
+denominator is used exactly, preserving exact limits and examples such as
+`abs(100 + 50 - 10) / 160 = 0.875`, balanced flow `= 0`, and one-direction flow
+`= 1`.
 
 Near 0 means aggression alternates.
 
 Near 1 means aggression is consistently directional.
 
+Magnitude and direction remain separate. `NetFlowSign` is `BUY`, `SELL`, or
+`NEUTRAL` from `sum(OF_j)` under a configured inclusive neutral tolerance.
+Coverage diagnostics are:
+
+```text
+UnknownFlowShare = UnknownVolume / (BuyVolume + SellVolume + UnknownVolume)
+
+DirectionalFlowCoverage =
+    (BuyVolume + SellVolume)
+    / (BuyVolume + SellVolume + UnknownVolume)
+```
+
+Both are zero when no aggressive-trade volume is observed. Coverage is exposed
+but does not automatically rescale unrelated features.
+
 ---
 
 # 38. Shock Persistence
 
-For the last (n) shocks:
+For the last configured `N` qualifying shocks, with BUY `= +1` and SELL `= -1`:
 
-[
-SP_t=
-\frac{
-|\sum Direction_k|
-}{
-n
-}
-]
+```text
+ShockPersistence = abs(sum(Direction_k)) / N
+```
 
-Repeated same-direction shocks increase persistence.
+The result retains the dominant shock direction and the latest contiguous
+same-direction suffix. `ShockRun` owns the ordered shock IDs, direction, count,
+first/last exchange times, first-start/last-end normalized event indices,
+event-index span, and exchange-seconds span. It describes an observable shock
+run without inferring participant identity or a directional campaign.
 
 ---
 
 # 39. Impact Escalation
 
-For consecutive similarly directed shocks:
+For an existing comparable same-direction `ShockPair` at the configured impact
+horizon, preserve both sign and magnitude:
 
-[
-IE_k=
-\frac{
-I_k
-}{
-I_{k-1}+\epsilon
-}
-]
+```text
+DeltaDI = DI_2 - DI_1
 
-If:
+ImpactMagnitudeRatio = abs(DI_2) / abs(DI_1)
+```
 
-[
-IE>1
-]
+Epsilon is used only when the prior impact magnitude is zero. Existing
+`DeltaAE` is referenced unchanged. The initial bounded impact-toxicity
+component is:
 
-the aggressor is becoming more effective.
+```text
+PositiveCurrentDI = max(DI_2, 0)
 
-If:
+ImpactToxicityComponent =
+    PositiveCurrentDI / (abs(DI_1) + PositiveCurrentDI)
+```
 
-[
-IE<1
-]
-
-the aggressor is becoming less effective.
+A zero denominator uses epsilon. Increasing positive aggressor-direction impact
+raises the component. A non-positive current directional impact produces zero,
+so movement against the aggressor cannot appear more toxic merely because its
+absolute magnitude is nonzero.
 
 ---
 
@@ -3138,63 +3169,177 @@ the aggressor is becoming less effective.
 
 At chosen horizon:
 
-[
-RF_k=1-RR_k
-]
+```text
+RawReplenishmentFailure = 1 - RR
 
-Increasing replenishment failure is potentially toxic.
+BoundedReplenishmentFailure = 1 - min(max(RR, 0), 1)
+```
+
+Raw failure is not clamped: `RR > 1` remains negative over-recovery. Only the
+separate bounded positive failure participates in the optional composite.
+
+When a valid liquidity-credibility result exists for the same shock and no
+later observation horizon, optional interactions are:
+
+```text
+CredibleAbsorption = RR * LC
+ToxicReplenishment = RR * (1 - LC)
+```
+
+These do not redefine RR or LC. If LC is unavailable, every conditioned value
+is explicitly unavailable; the system never substitutes zero or one.
+
+Accepted MBO lifecycle transitions also produce exact liquidity-flow context at
+the original pre-shock top-K absolute prices on both sides. SELL attacks BID;
+BUY attacks ASK. The other side is retained separately. Same-price MODIFY uses
+its absolute quantity delta; a price-changing MODIFY withdraws the pre-event
+remainder from an included old price and adds the post-event remainder at an
+included new price. Execution is measured separately and never counted as
+withdrawal.
+
+For each side:
+
+```text
+NLP = AddedQuantity - WithdrawnQuantity
+
+NNLP = NLP / (AddedQuantity + WithdrawnQuantity)
+
+WithdrawalPressure =
+    AttackedSideWithdrawnQuantity
+    / (AttackedSideAddedQuantity + AttackedSideWithdrawnQuantity)
+```
+
+Positive natural denominators are used exactly; epsilon guards only a zero
+denominator, whose result is zero. Attacked- and opposite-side NLP and NNLP are
+never prematurely combined.
 
 ---
 
 # 41. News-Conditioned Toxicity
 
-Let:
-
-[
-U_i(t)
-]
-
-be news uncertainty and:
-
-[
-EI_i(t)
-]
-
-be relevant event intensity.
-
-An initial contextual feature is:
-
-[
-NT_i=U_iEI_i
-]
-
-The same order-book behavior may imply different risk during a quiet market than immediately after a high-impact unexpected event.
+News-conditioned toxicity remains an intended contextual extension, but it is
+deferred. Milestone J does not consume `NewsState`, calculate
+`NewsContextToxicity`, or fuse news and SRA features. Future work may retain the
+original conceptual primitives `NewsIntensity` and `NewsUncertainty`, with
+causal availability, as separate context alongside the market-side vector.
 
 ---
 
 # 42. Toxicity Vector
 
-Store:
+`ToxicityVector` is an immutable nested result with independently inspectable
+flow, shock persistence/run, impact, replenishment, MBO liquidity flow, market
+state, and optional credibility-interaction components. It owns its current
+shock, exact observation boundaries, latest-evidence availability, complete
+configuration, and `toxicity-v1` feature version.
 
-[
-T_t=
-[
-FP,
-SP,
-IE,
-RF,
-NewsIntensity,
-NewsUncertainty,
-SpreadExpansion,
-VolatilityJump
-]
-]
+## Spread response
 
-A future model may estimate:
+The baseline is the exact standard-library median of the previous configured
+`N` valid snapshot spreads. Post-shock spread is taken at the configured impact
+horizon:
 
-[
-ToxicityScore=f(T_t)
-]
+```text
+AbsoluteSpreadChange = PostShockSpread - BaselineSpread
+
+SpreadExpansionRatio = PostShockSpread / BaselineSpread
+```
+
+Epsilon guards a zero baseline only. A one-sided book makes spread response
+unavailable; no artificial large spread is fabricated, and the unavailable
+result retains a one-sided-book flag.
+
+## Event-time volatility response
+
+For positive consecutive midprices, use unannualized arithmetic returns:
+
+```text
+r_j = (M_j - M_(j-1)) / M_(j-1)
+
+EventTimeRV = sqrt(mean(r_j^2))
+
+VolatilityJumpRatio = PostShockRV / PreShockRV
+```
+
+The pre-window requires `N + 1` exact states for `N` returns. The post-window
+runs from shock end through `N` future normalized events. Epsilon guards a zero
+pre-shock RV. Raw pre/post RV values and the raw ratio remain available.
+
+## Optional engineering-prior composite
+
+Unbounded nonnegative ratios use the documented monotonic transform:
+
+```text
+BoundedRatio(x) = x / (1 + x)
+```
+
+The exact convex composite is:
+
+```text
+ToxicityScore =
+    0.20 * FlowPersistence
+  + 0.15 * ShockPersistence
+  + 0.15 * ImpactToxicityComponent
+  + 0.15 * BoundedReplenishmentFailure
+  + 0.10 * BoundedSpreadExpansion
+  + 0.10 * BoundedVolatilityJump
+  + 0.15 * WithdrawalPressure
+```
+
+Weights are centralized, configurable initial engineering priors that must sum
+exactly to one. They are not fitted to fixtures or future outcomes. Every input
+must already be in `[0, 1]`; invalid mathematics is rejected rather than
+silently clamped. The original conceptual vector remains the research target:
+flow persistence, shock persistence, impact behavior, replenishment failure,
+news intensity, news uncertainty, spread expansion, and volatility jump. In
+Milestone J, news components are deferred and MBO withdrawal pressure is an
+additional observable market-side component.
+
+For an existing comparable pair with two available vectors:
+
+```text
+DeltaToxicity = Toxicity_2 - Toxicity_1
+```
+
+This is descriptive and is not injected into `FailedAggressionComparison` as a
+mandatory feature.
+
+## Post-shock windows, availability, and unavailability
+
+Version 1 implements post-shock toxicity only. Defaults are 50 normalized
+events for flow, the latest 4 qualifying shocks, 25-event impact and
+replenishment horizons, 20 pre-events for spread, 20 pre-returns and 25
+post-returns for volatility, and the original top 3 price levels for liquidity
+flow. These are configurable engineering priors.
+
+Each component uses explicit caller-supplied normalized market-event indices.
+The complete vector becomes available at the maximum process time of all
+included mandatory evidence and optional included LC evidence. It is never
+backdated to shock end. Later flow, lifecycle transitions, shocks, prices, or
+news cannot leak backward.
+
+Ordinary insufficiency returns `ToxicityUnavailable`, with one or more of:
+
+```text
+INSUFFICIENT_FLOW_WINDOW
+INSUFFICIENT_SHOCK_HISTORY
+MISSING_IMPACT
+MISSING_RESILIENCY
+MISSING_BOOK_STATE
+STRUCTURAL_BREAK
+MISSING_EVENT_INDEX
+MISSING_SPREAD
+MISSING_VOLATILITY_WINDOW
+```
+
+RESET-terminated MBO lifecycles, declared RESET, sequence corruption, and known
+data gaps invalidate any component/run window spanning their event index. A
+complete vector is atomic; unavailable mandatory evidence never produces a
+partially fabricated vector. `ToxicityService` only selects exact windows,
+invokes pure equations and MBO accounting, and constructs the typed result. It
+does not emit alpha, BUY/SELL decisions, position sizes, or orders.
+
+See [ADR 0009](decisions/0009-post-shock-market-toxicity.md).
 
 ---
 
@@ -4233,6 +4378,7 @@ liquidity_shocks
 shock_responses
 shock_pairs
 sra_states
+toxicity_vectors
 market_regimes
 ```
 
@@ -4316,6 +4462,7 @@ src/sra_nexus/
         service.py
         curvature.py
         liquidity_flow.py
+        toxicity_math.py
         toxicity.py
         shock_pair.py
         effectiveness.py
@@ -4602,7 +4749,7 @@ Resiliency analysis: COMPLETE
 
 Liquidity credibility: COMPLETE
 
-Toxicity analysis: NOT STARTED
+Toxicity analysis: COMPLETE
 
 Shock-pair analysis: COMPLETE
 
