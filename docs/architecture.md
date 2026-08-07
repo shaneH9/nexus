@@ -2288,6 +2288,363 @@ RR_1+\epsilon
 
 The goal is to distinguish broad recovery from a single potentially ephemeral wall.
 
+## Milestone G Shock, Impact, and Resiliency Primitives
+
+Milestone G implements sections 24 through 33 as deterministic research
+features. It does not emit `BUY`, `SELL`, a position size, or an order. It does
+not consume `NewsState`, calibrate a statistical shock probability, compare
+shock pairs, or calculate liquidity credibility or toxicity.
+
+### Aggressive Flow Windows and Reconciled Volume
+
+The implemented immutable event-window contract is:
+
+```text
+AggressiveFlowWindow
+{
+    instrument_id
+    start_reference
+    end_reference
+    start_exchange_time
+    end_exchange_time
+    start_process_time
+    end_process_time
+    buy_volume
+    sell_volume
+    unknown_volume
+    buy_trade_count
+    sell_trade_count
+    unknown_trade_count
+    observations[]
+}
+```
+
+The supplied normalized observation order defines the window. The helper may
+select the last `N` volume-owning trade observations, so wall-clock duration is
+metadata rather than the exclusive window definition. The initial service
+accepts an explicit caller-bounded episode of at most 20 observations; it
+rejects a longer ambiguous episode rather than silently moving the baseline
+snapshot.
+
+`AggressiveTradeObservation` is materialized only after the execution-ownership
+policy in section 21 runs. Ownership remains:
+
+```text
+BOOK_ONLY   -> one book-owned observation, aggressor UNKNOWN
+TRADE_ONLY  -> one trade-owned observation with its explicit aggressor side
+MATCHED     -> one trade-owned observation, never two volumes
+DISTINCT    -> one book-owned UNKNOWN plus one separately identified trade observation
+UNRESOLVED  -> no automatically countable volume observation
+```
+
+Resting book side is not promoted into authoritative aggressor side. Therefore
+the exact window equations are:
+
+[
+V_W^{buy}=\sum_{o\in W:o.side=BUY}Quantity_o
+]
+
+[
+V_W^{sell}=\sum_{o\in W:o.side=SELL}Quantity_o
+]
+
+[
+V_W^{unknown}=\sum_{o\in W:o.side=UNKNOWN}Quantity_o
+]
+
+[
+OF_W=V_W^{buy}-V_W^{sell}
+]
+
+`UNKNOWN` volume and count remain visible but are excluded from signed flow and
+cannot create a directional normalized-aggression result.
+
+### Normalized Aggression, Penetration, and Velocity
+
+The existing weighted-depth implementation and its explicit weights are reused
+without redefinition. `WD_A(t0)` or `WD_B(t0)` is measured from the snapshot
+immediately before the caller-bounded window. The equations in section 25 are
+implemented with exact Decimal quantity arithmetic. A zero denominator returns
+`normalized_aggression=None` with `ZERO_OPPOSITE_DEPTH`; infinity is never
+created.
+
+For a BUY episode the attacked/opposite displayed side is ASK. For a SELL
+episode it is BID. `BookExecutionState` pairs one normalized `BookEvent.EXECUTE`
+with the reconstructed snapshots immediately before and after its atomic book
+mutation.
+
+`levels_touched` is the number of distinct attacked-side absolute prices that
+receive execution. `levels_consumed` is the number of those prices whose full
+displayed aggregate quantity reaches zero immediately after an execution at
+that price. Thus partial execution can touch a level without consuming it, and
+consuming one resting order does not consume a price level when other displayed
+orders remain there.
+
+For direction (d), event velocity is measured in instrument quantity per
+same-direction, volume-owning observation:
+
+[
+EventVelocity_d=
+\frac{V_W^d}{DirectionalTradeCount_W^d}
+]
+
+Clock velocity is separately measured in instrument quantity per exchange-time
+second:
+
+[
+ClockVelocity_d=
+\frac{V_W^d}{EndExchangeTime_W-StartExchangeTime_W}
+]
+
+Clock velocity is unavailable when elapsed exchange time is zero. The two
+velocity units are never collapsed.
+
+### Shock Features and Initial Classification
+
+The immutable raw feature contract is:
+
+```text
+ShockFeatures
+{
+    instrument_id
+    direction
+    start_reference
+    end_reference
+    start_exchange_time
+    end_exchange_time
+    start_process_time
+    end_process_time
+    aggressive_volume
+    unknown_volume
+    normalized_aggression
+    normalization_unavailable_reason
+    levels_touched
+    levels_consumed
+    event_velocity
+    clock_velocity
+    pre_spread
+    pre_midprice
+    pre_weighted_opposite_depth
+    immediate_midprice_change
+}
+```
+
+There is no calibrated shock probability or rolling z-score in this milestone.
+`ShockDetectionConfig` holds the initial inclusive, deterministic engineering
+thresholds. Defaults are:
+
+```text
+maximum aggression-window observations   20
+minimum normalized aggression             0.5
+minimum aggressive volume                 100 instrument quantity units
+minimum levels consumed                   1
+minimum event velocity                    disabled
+```
+
+Every threshold is independently configurable or disabled, although at least
+one must remain configured. A configured rule passes on `observed >= threshold`.
+All rule outcomes, observed values, thresholds, and explanations are retained.
+Available normalized aggression remains required to materialize a
+`LiquidityShock`; a zero-liquidity denominator is not a valid shock candidate.
+These defaults are transparent starting values and have not been optimized on
+fixtures.
+
+The materialized immutable contract is:
+
+```text
+LiquidityShock
+{
+    shock_id
+    instrument_id
+    direction
+    start_exchange_time
+    end_exchange_time
+    start_process_time
+    end_process_time
+    start_reference
+    end_reference
+    aggressive_volume
+    normalized_aggression
+    levels_touched
+    levels_consumed
+    pre_spread
+    pre_depth
+    immediate_price_change
+    detection_method
+    detection_version
+}
+```
+
+`pre_depth` is the exact weighted opposite-side normalization denominator; it is
+not the raw K-level resiliency baseline. `shock_id` is a typed UUID.
+`end_exchange_time - start_exchange_time` is market-time shock duration.
+`end_process_time - start_process_time` is system-observable shock duration.
+Market-response mathematics uses exchange time, while historical decision
+availability must still wait for process time. Milestone G does not turn those
+latencies into trading decisions.
+
+### Event-Horizon Price Impact
+
+The primary horizon is the count of normalized market events after shock end,
+not milliseconds. Every accepted event advances the horizon; a trade or quote
+can carry unchanged current book state until a later book mutation. Default
+horizons are `1, 5, 10, 25, 50, 100`, and configuration may supply other unique
+positive event counts.
+
+The section 28 raw and directional equations are retained exactly:
+
+[
+PI_k(h)=M(t_k+h)-M(t_k^-)
+]
+
+[
+DI_k(h)=Direction_k\cdot PI_k(h)
+]
+
+where BUY is `+1` and SELL is `-1`. Positive `DI` means movement in the
+aggressor's direction; negative `DI` means reversal against it. Raw `PI` and
+`DI` use instrument price units.
+
+Milestone G retains both volume normalizations:
+
+[
+I_k(h)=\frac{|PI_k(h)|}{AggressiveVolume_k}
+]
+
+[
+DNI_k(h)=\frac{DI_k(h)}{AggressiveVolume_k}
+]
+
+and normalized-aggression impact:
+
+[
+I_k^*(h)=\frac{|PI_k(h)|}{NormalizedAggression_k}
+]
+
+`ShockImpact` retains baseline and future midprices, all raw and normalized
+representations, the event horizon, and exchange/process elapsed seconds.
+Missing future state or midprice is explicitly unavailable; zero is retained
+only when the measured price impact is genuinely zero.
+
+### Raw-Depth Depletion and Replenishment
+
+The attacked side is BID for a SELL shock and ASK for a BUY shock. Primary
+resiliency uses raw aggregate quantity across the current first `K` attacked-side
+levels; it does not silently use weighted depth. The initial `K` is 3.
+
+`D0` is raw K-level depth immediately before shock onset. `D_min` is the minimum
+of `D0` and every explicitly supplied within-episode depletion snapshot. The
+caller must supply at least one such snapshot. Consequently:
+
+[
+ConsumedDepth=D_0-D_{min}\ge 0
+]
+
+For the event at horizon (h) after shock end:
+
+[
+Replenished(h)=Depth(t_{end}+h)-D_{min}
+]
+
+[
+RR(h)=\frac{Replenished(h)}{ConsumedDepth}
+]
+
+`ConsumedDepth == 0` makes RR explicitly unavailable with `NO_DEPLETION`.
+RR is not clamped: values above 1 preserve over-recovery, and a negative value
+may expose further depletion below the within-episode minimum.
+
+Recovery time starts at shock END. The default thresholds are `0.25`, `0.50`,
+`0.75`, and `1.00`. For each threshold, every response event—not only configured
+reporting horizons—is inspected to find first passage:
+
+[
+\tau_{q,events}=\min\{h:RR(h)\ge q\}
+]
+
+The same first event retains elapsed exchange-time seconds and elapsed
+process-time seconds from shock end. Irregular clock spacing therefore does not
+change `events_to_recovery`. An unreached threshold stores `recovered=False` and
+`None` values, never a large sentinel.
+
+`ResiliencyVector` retains:
+
+```text
+ResiliencyVector
+{
+    shock_id
+    depth_levels_k
+    baseline_depth
+    minimum_depth
+    consumed_depth
+    original_price_levels[]
+    rr_by_horizon[]
+    recovery_times[]
+    observation_end
+    resiliency_version
+}
+```
+
+Default reported RR horizons are `5, 10, 25, 50, 100`; configuration may use
+other positive event counts. Missing horizons are explicit. No composite
+`ResScore` is created.
+
+### Original-Price-Level Recovery, NTS, and DSR
+
+Primary raw K-level depth follows the current touch because it measures total
+near-book capacity. Multi-level attribution deliberately fixes the original
+absolute prices from the pre-shock attacked-side book. It never compares a new
+rank-1 price with the old rank-1 price as if they were the same level.
+
+For each original price rank (j), the section 33 equation is applied using
+quantity at that exact price. A missing price has depth zero. When
+`Depth_j_pre == Depth_j_min`, that level did not deplete and `RR_j` is
+unavailable rather than fabricated.
+
+Initial level weights are `(0.5, 0.3, 0.2)` and must be positive and sum exactly
+to 1. Let (A_h) be the set of levels with available recovery. Missing levels are
+explicitly excluded and available weights are renormalized:
+
+[
+NTS(h)=
+\frac{\sum_{j\in A_h}w_jRR_j(h)}{\sum_{j\in A_h}w_j}
+]
+
+When every level is available this is exactly the section 33 weighted sum. The
+stored observation retains the weighted numerator and available-weight
+denominator.
+
+Deep support retains the existing equation without weight renormalization:
+
+[
+DSR(h)=
+\frac{\sum_{j=2}^{K}w_jRR_j(h)}{RR_1(h)+\epsilon}
+]
+
+Only available deep-level components enter the numerator. DSR is unavailable
+when `RR_1` is unavailable, no deep level is available, or the exact denominator
+is zero. The default centralized epsilon is `0.000001`. Raw level recoveries,
+touch recovery, deep numerator, weights, and epsilon remain available so the
+ratio is not opaque.
+
+### Reproducibility and Service Boundary
+
+Milestone G output versions are:
+
+```text
+shock-detection-v1
+impact-v1
+resiliency-v1
+```
+
+Formula or configuration-policy changes require new versions. The focused
+`ShockResearchService` composes already normalized/reconciled observations,
+snapshots, transparent threshold classification, impact, and resiliency. It
+contains no SQL, fixture parsing, provider payloads, `NewsState`, alpha,
+allocation, execution, cost, tax, or order-generation logic. Known-invalid
+episode inputs raise before an atomic `ShockResearchResult` is returned. See
+[ADR 0006](decisions/0006-event-horizon-shock-resiliency-primitives.md).
+
 ---
 
 # 34. Net Liquidity Provision
@@ -3453,9 +3810,13 @@ src/sra_nexus/
             mock.py
 
     sra/
+        enums.py
+        windows.py
         shock.py
         impact.py
         resiliency.py
+        state.py
+        service.py
         curvature.py
         liquidity_flow.py
         credibility.py
@@ -3734,9 +4095,11 @@ Market-data ingestion: COMPLETE
 
 Order-book reconstruction: COMPLETE
 
-Shock detection: NOT STARTED
+Shock detection: COMPLETE
 
-Resiliency analysis: NOT STARTED
+Price impact: COMPLETE
+
+Resiliency analysis: COMPLETE
 
 Liquidity credibility: NOT STARTED
 

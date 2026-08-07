@@ -65,6 +65,10 @@ class QuoteEventId(_UuidIdentifier):
     """Stable internal identifier for an immutable top-of-book quote observation."""
 
 
+class ShockId(_UuidIdentifier):
+    """Stable internal identifier for an immutable detected liquidity shock."""
+
+
 class _OpaqueStringIdentifier(RootModel[str]):
     """Immutable typed wrapper for a provider-defined opaque identifier."""
 
@@ -151,3 +155,8 @@ def new_trade_event_id() -> TradeEventId:
 def new_quote_event_id() -> QuoteEventId:
     """Return a new internal quote-event identifier."""
     return QuoteEventId.new()
+
+
+def new_shock_id() -> ShockId:
+    """Return a new internal liquidity-shock identifier."""
+    return ShockId.new()
