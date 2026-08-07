@@ -69,6 +69,10 @@ class ShockId(_UuidIdentifier):
     """Stable internal identifier for an immutable detected liquidity shock."""
 
 
+class ShockPairId(_UuidIdentifier):
+    """Stable internal identifier for one ordered liquidity-shock comparison."""
+
+
 class _OpaqueStringIdentifier(RootModel[str]):
     """Immutable typed wrapper for a provider-defined opaque identifier."""
 

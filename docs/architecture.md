@@ -2887,91 +2887,250 @@ ToxicityScore=f(T_t)
 
 # 43. Shock Pair
 
-Two shocks may form a candidate pair when:
+Milestone H compares two ordered `LiquidityShock` values only under an explicit,
+versioned comparability policy. A pair requires:
 
-* same instrument
-* same direction
-* sufficiently close in event or clock time
-* market regime remains comparable
-* no structural break invalidates comparison
+* the same `instrument_id`;
+* the same `ShockDirection`;
+* shock 2 to follow shock 1 without exchange- or process-time regression and
+  with at least one of those distances strictly positive;
+* caller-supplied event distance at or below 500 normalized market events;
+* exchange-time distance at or below 60 seconds;
+* no caller-declared `RESET`, sequence corruption, or material data gap between
+  the shocks;
+* `0.5 <= A_2/A_1 <= 2.0` under the default enabled normalized-aggression ratio
+  policy; and
+* available, policy-compatible impact, replenishment, and recovery-threshold
+  observations at every configured required horizon.
+
+The values 500 events, 60 exchange seconds, and the 0.5--2.0 ratio band are
+transparent initial engineering values. They are inclusive, configurable, and
+not empirical claims. Both aggression-ratio bounds may be disabled together.
+Same-direction comparison may not be disabled for this feature family.
+
+`event_distance` is exactly the number of **all normalized market events
+strictly between shock 1 end and shock 2 start**, supplied by the upstream
+research pipeline. It is not derived from directional trades, trade count,
+sequence-number subtraction, or wall-clock time. Exchange and process distances
+are instead calculated exactly from the corresponding shock boundary clocks and
+remain separate.
 
 ```text
 ShockPair
 {
     pair_id
-
-    shock_1
-    shock_2
-
+    instrument_id
+    direction
+    shock_1_id
+    shock_2_id
     event_distance
-    time_distance
-
-    impact_delta
-    replenishment_delta
-    recovery_delta
-    curvature_delta
-    toxicity_delta
+    exchange_seconds_distance
+    process_seconds_distance
+    aggression_ratio
+    comparison_version
 }
 ```
+
+Pair identity is an order-sensitive UUIDv5 of `shock_1_id`, `shock_2_id`, and
+comparison version. Reconstructing the same ordered/versioned pair reproduces
+the ID; reversing the IDs does not. A shock cannot pair with itself.
+
+Ordinary incomparability returns typed reasons and no partially materialized
+`ShockPair`. Missing required horizons, direction mismatch, distance violations,
+ratio violations, structural breaks, and feature-policy mismatches are ordinary
+research unavailability. Duplicate horizons, wrong feature ownership, and other
+malformed inputs remain data-integrity errors.
+
+Default comparison horizons are `5, 10, 25, 50` events for both price impact and
+replenishment ratio. Default recovery thresholds are `0.25, 0.50, 0.75, 1.00`.
+Each is independently retained; no horizon is collapsed into a scalar.
 
 ---
 
 # 44. Aggressor Effectiveness
 
-Define:
+For shock (k) at explicit event horizon (h), Milestone H retains the original
+signed definition:
 
 [
-AE_k=
+AE_k(h)=
 \frac{
-DirectionalPriceImpact_k
+DirectionalPriceImpact_k(h)
 }{
 NormalizedAggression_k+\epsilon
 }
 ]
 
-For two similarly directed shocks:
+The centralized default is `epsilon = 0.000001`. Directional price impact is
+signed in the aggressor's direction, so `AE > 0` means price moved with the
+aggressor and `AE < 0` means price moved against it. Negative effectiveness is a
+valid reversal observation, not missing data. Because directional impact is in
+instrument price units and normalized aggression is dimensionless, `AE` is in
+instrument price units. A future return-normalized variant must be a separately
+named feature.
+
+For two comparable same-direction shocks at the same horizon:
 
 [
-\Delta AE=AE_2-AE_1
+\Delta AE(h)=AE_2(h)-AE_1(h)
 ]
 
-Core hypothesis:
+and the secondary, epsilon-regularized relative feature is:
 
 [
-\Delta AE<0
+RelativeAEChange(h)=
+\frac{AE_2(h)-AE_1(h)}{|AE_1(h)|+\epsilon}
 ]
 
-means the aggressor is becoming less effective.
+Absolute `DeltaAE` remains primary. Relative change does not replace it.
 
-For repeated sell shocks, declining aggressor effectiveness combined with strengthening bid resiliency may predict positive subsequent returns.
+Interpretation uses a configurable tolerance in instrument price units, with an
+initial value of `0.000001`:
 
-For repeated buy shocks, the symmetric condition may predict negative subsequent returns.
+```text
+DeltaAE < -tolerance    WEAKENING
+DeltaAE > +tolerance    STRENGTHENING
+otherwise               STABLE
+```
+
+This sign convention is symmetric. Declining positive directional impact makes
+both repeated SELL aggression and repeated BUY aggression `WEAKENING`. A second
+shock whose price response reverses against its aggressor can have negative AE
+and a strongly negative DeltaAE.
+
+`AggressorEffectiveness` retains shock ID, direction, horizon, directional
+impact, normalized aggression, epsilon, exact effectiveness, source impact
+version, and effectiveness version. `ShockPairEffectivenessComparison` retains
+both horizon-specific AE objects, absolute and relative changes, tolerance, and
+interpretation.
 
 ---
 
-# 45. Absorption Efficiency
+# 45. Resiliency and Absorption Comparison
 
-Candidate feature:
+For each configured common replenishment horizon:
 
 [
-AbsEff_k=
-\frac{
-RR_k
-}{
-AE_k+\epsilon
+\Delta RR(h)=RR_2(h)-RR_1(h)
+]
+
+Positive `DeltaRR` means the second shock has stronger replenishment. RR remains
+unclamped, including `RR > 1`, and every horizon is stored independently.
+
+For each configured recovery threshold (q):
+
+[
+\Delta\tau_{q,events}=\tau_{2,q,events}-\tau_{1,q,events}
+]
+
+[
+\Delta\tau_{q,exchange\ seconds}=
+\tau_{2,q,exchange\ seconds}-\tau_{1,q,exchange\ seconds}
+]
+
+[
+\Delta\tau_{q,process\ seconds}=
+\tau_{2,q,process\ seconds}-\tau_{1,q,process\ seconds}
+]
+
+Negative values mean faster recovery for that particular unit. Event, exchange,
+and process interpretations remain separate because irregular event spacing can
+make their changes differ. If either shock does not reach a recorded threshold,
+the comparison retains each available first-passage value but all deltas for
+that threshold are explicitly unavailable; no sentinel is introduced.
+
+The earlier conceptual signed absorption formula was:
+
+[
+SignedAbsEff_k(h)=\frac{RR_k(h)}{AE_k(h)+\epsilon}
+]
+
+Because AE may cross or approach zero, that representation can create a sign
+singularity and counterintuitive ordering. It is retained here as historical
+design context but is not emitted by Milestone H. The implemented stable primary
+feature is explicitly magnitude-normalized:
+
+[
+AbsEffMagnitude_k(h)=
+\frac{RR_k(h)}{|AE_k(h)|+\epsilon}
+]
+
+and:
+
+[
+\Delta AbsEffMagnitude(h)=
+AbsEffMagnitude_2(h)-AbsEffMagnitude_1(h)
+]
+
+Positive delta means more replenishment per unit of aggressor-effectiveness
+magnitude during the second shock. Since RR is dimensionless and AE is in price
+units, magnitude absorption efficiency has units of inverse instrument price.
+The denominator is always positive. Near-zero AE intentionally produces a large
+finite value under epsilon; Milestone H neither clamps nor winsorizes it. Such
+tail treatment belongs to later statistical research.
+
+For intuition, omitting a negligible epsilon gives `0.5/0.04 = 12.5` and
+`0.8/0.02 = 40`, hence a delta of `27.5`. Reproducible calculations always use
+the configured exact epsilon rather than silently dropping it.
+
+The combined immutable research output is:
+
+```text
+FailedAggressionComparison
+{
+    pair_id
+    pair
+    shock_1_id
+    shock_2_id
+    instrument_id
+    direction
+    event_distance
+    exchange_seconds_distance
+    process_seconds_distance
+    aggression_ratio
+    effectiveness_by_horizon[]
+    resiliency_by_horizon[]
+    recovery_comparisons[]
+    absorption_efficiency_by_horizon[]
+    comparison_available
+    reasons_unavailable[]
+    feature_version
 }
-]
+```
 
-Then:
+`ShockPairService` accepts one caller-selected ordered candidate plus existing
+Milestone G impacts and resiliency vectors. It either produces the complete
+configured feature set atomically or an explicit incomparable result with no
+partial pair features. It contains no SQL, news, alpha, allocation, execution,
+cost, tax, or order logic.
 
-[
-\Delta AbsEff=
-AbsEff_2-AbsEff_1
-]
+The initial upstream pairing policy is to compare each shock with the most
+recent prior comparable shock of the same direction. The service deliberately
+does not perform an all-pairs search, and no O(N^2) history is generated. This
+adjacent-prior policy is an initial research choice, not an empirically optimal
+lag specification. The upstream pipeline must aggregate structural-break flags
+across the candidate span before invoking the service.
 
-Increasing absorption efficiency means liquidity is recovering more effectively relative to the aggressor's ability to move price.
+Output versions are:
 
-This is one of the primary SRA research features.
+```text
+shock-pair-v1
+aggressor-effectiveness-v1
+absorption-efficiency-v1
+failed-aggression-comparison-v1
+```
+
+A potentially interesting failed-aggression research condition remains:
+
+```text
+DeltaAE < 0
+AND DeltaRR > 0 and/or DeltaTau < 0
+AND DeltaAbsEffMagnitude > 0
+```
+
+This is a hypothesis feature state, not a `BUY`, `SELL`, position-size, expected
+return, or order decision. See
+[ADR 0007](decisions/0007-comparable-shock-failed-aggression.md).
 
 ---
 
@@ -3844,6 +4003,9 @@ src/sra_nexus/
         credibility.py
         toxicity.py
         shock_pair.py
+        effectiveness.py
+        absorption.py
+        comparison.py
         state.py
 
     regimes/
@@ -4127,7 +4289,7 @@ Liquidity credibility: NOT STARTED
 
 Toxicity analysis: NOT STARTED
 
-Shock-pair analysis: NOT STARTED
+Shock-pair analysis: COMPLETE
 
 Alpha model: NOT STARTED
 
