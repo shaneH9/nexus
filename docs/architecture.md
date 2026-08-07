@@ -2698,51 +2698,364 @@ This approximates a range of:
 
 # 35. Liquidity Credibility
 
-Displayed liquidity should be weighted according to behavior.
+Milestone I adds an MBO-only descriptive research layer for the observable
+behavior of displayed liquidity. It does not infer participant identity,
+trader intent, spoofing, layering, manipulation, expected return, a trade
+direction, a position size, or an order. Market-by-price data has no stable
+order identity and therefore returns an explicit `MBO_REQUIRED` unavailable
+result rather than a fabricated approximation.
 
-Potential order-level inputs:
+This layer is additional. It does not change raw depth, normalized aggression,
+directional impact, replenishment ratio, recovery time, aggressor
+effectiveness, absorption efficiency, or any other earlier SRA equation.
 
-* lifetime
-* executed fraction
-* cancelled fraction
-* replenishment count
-* attacks survived
+## Accepted MBO Lifecycle Accounting
 
-Candidate order credibility:
+`OrderLifecycleTracker` observes a `BookEvent` only after `OrderBook` or the
+canonical replay path has accepted it. It does not reconstruct the book or
+accept rejected events into a second history. Its immutable output is:
+
+```text
+OrderLifecycle
+{
+    lifecycle_id
+    order_id
+    instrument_id
+    venue
+    sequence_stream_id
+    side
+    initial_price
+    final_price
+    first_seen_exchange_time
+    last_seen_exchange_time
+    first_seen_process_time
+    last_seen_process_time
+    first_event_index?
+    last_event_index?
+    event_lifetime?
+    initial_quantity
+    observed_added_quantity
+    maximum_observed_quantity
+    total_executed_quantity
+    total_withdrawn_quantity
+    unresolved_remaining_quantity
+    modify_count
+    price_change_count
+    execution_count
+    cancel_count
+    terminal_reason
+    transitions[]
+    feature_version
+}
+```
+
+`ObservedAddedQuantity` uses absolute MODIFY semantics:
+
+[
+ObservedAddedQuantity_o=
+InitialQuantity_o+
+\sum_m\max(Q_{m,new}-Q_{m,old},0)
+]
+
+A same-quantity price move adds no quantity and preserves lifecycle identity. A
+quantity-decreasing MODIFY records the exact decrease as withdrawal. `DELETE`
+records all remaining displayed quantity as withdrawal. `RESET` does not imply
+voluntary cancellation: it terminates the lifecycle with reason `RESET` and
+leaves the remainder unresolved. Explicit research-window closure does the same
+with reason `OBSERVATION_END`. Other terminal reasons are `EXECUTED`,
+`CANCELLED`, and `DELETED`.
+
+The exact fractions are:
+
+[
+ExecutedFraction_o=
+\frac{TotalExecutedQuantity_o}{ObservedAddedQuantity_o}
+]
+
+[
+WithdrawalFraction_o=
+\frac{TotalWithdrawnQuantity_o}{ObservedAddedQuantity_o}
+]
+
+Both lie in `[0,1]`. Values above one or any failure of exact quantity
+conservation are corruption errors; calculations never clamp them. Normally
+terminated lifecycles have no unresolved quantity. `RESET` and
+`OBSERVATION_END` may be right-censored:
+
+[
+ObservedAdded=Executed+Withdrawn+Unresolved
+]
+
+Market behavior and system observability retain separate clocks:
+
+[
+ExchangeLifetime=LastSeenExchangeTime-FirstSeenExchangeTime
+]
+
+[
+ProcessLifetime=LastSeenProcessTime-FirstSeenProcessTime
+]
+
+When the caller supplies true indices over all normalized market events:
+
+[
+EventLifetime=LastEventIndex-FirstEventIndex
+]
+
+It is `None` when those indices are unavailable and is never inferred from
+provider sequence numbers.
+
+## Original Attacked Region and Shock Outcomes
+
+For a SELL shock the attacked side is BID; for a BUY shock it is ASK. The
+configured region is the set of absolute prices at the original pre-shock top
+`K` attacked-side levels, with default `K=3`. Ranks are not followed as the
+book changes. The pre-shock order set contains only positive-remainder orders
+at those prices immediately before the explicit shock-start event index.
+
+For each pre-shock order, the shock window retains executed, withdrawn, and
+remaining quantities. With `Q_o,pre` denoting its immediately pre-shock
+remainder:
+
+[
+ShockExecutedFraction_o=
+\frac{ExecutedDuringShock_o}{Q_{o,pre}}
+]
+
+[
+ShockWithdrawalFraction_o=
+\frac{WithdrawnDuringShock_o}{Q_{o,pre}}
+]
+
+An order survives when its shock-end remainder is positive. Full execution is
+not treated as poor behavior merely because the order did not survive. A RESET
+inside the analysis window makes ordinary credibility unavailable. An upward
+MODIFY to a pre-shock order inside the shock also makes its pre-shock quantity
+attribution unavailable: generic MBO does not identify which fungible units of
+one order later executed.
+
+`OrderBehaviorFeatures` preserves exchange/process/event lifetime, observed
+added, executed, withdrawn and unresolved quantities, exact fractions, counts,
+price changes, terminal reason, and availability. `AttackedOrderCredibility`
+additionally preserves pre-shock quantity, shock outcomes, shock fractions,
+survival, every score component, configured weights, and lifetime tau.
+
+## Optional Order Credibility Engineering Prior
+
+The optional descriptive score uses centralized initial engineering priors:
+
+```text
+w_execution     = 0.40
+w_survival      = 0.20
+w_lifetime      = 0.20
+w_cancellation  = 0.20
+```
+
+The components are:
+
+[
+ExecutionComponent_o=ExecutedFraction_o
+]
+
+[
+SurvivalComponent_o=
+1\quad\text{if the order survives or is fully executed during the shock, else }0
+]
+
+[
+LifetimeComponent_o=1-\exp(-ExchangeLifetimeSeconds_o/\tau_{life})
+]
+
+[
+CancellationComponent_o=1-WithdrawalFraction_o
+]
+
+with initial configurable `tau_life=30` exchange seconds. Therefore:
 
 [
 OC_o=
-w_1ExecutedFraction+
-w_2LifetimeScore+
-w_3ReplenishmentScore+
-w_4SurvivalScore-
-w_5CancelFraction
+0.40ExecutionComponent_o+
+0.20SurvivalComponent_o+
+0.20LifetimeComponent_o+
+0.20CancellationComponent_o
 ]
 
-normalized to:
+All weights form an exact convex combination and all components and `OC` are
+in `[0,1]`. These values are not fitted to fixtures and are not predictive
+claims.
 
-[
-OC_o\in[0,1]
-]
+## Price-Level Replenishment Episodes
 
-Side-level credibility:
+After an execution/depletion at an original attacked price, a later ADD or
+positive MODIFY increase at that exact price can start a
+`ReplenishmentEpisode`. The model makes no same-participant claim:
 
-[
-LC_s=
-\frac{
-\sum_o Quantity_oOC_o
-}{
-\sum_o Quantity_o
+```text
+ReplenishmentEpisode
+{
+    episode_id
+    shock_id
+    side
+    price
+    depletion_event_reference
+    first_replenishment_event_reference
+    depletion_event_index
+    first_replenishment_event_index
+    quantity_added
+    contributing_order_ids[]
+    exchange_delay_seconds
+    process_delay_seconds
+    subsequent_executed_quantity
+    subsequent_withdrawn_quantity
+    executed_fraction?
+    withdrawn_fraction?
+    attribution_complete
+    feature_version
 }
-]
+```
 
-Credible depth:
+Adds at the same price no more than the configured two normalized events apart
+join the open burst until it receives execution. The next qualifying addition
+after execution starts a new episode. Exchange delay is the market-behavior
+delay from the depletion execution to the first replenishment; process delay is
+retained separately.
+
+New-order additions have exact order-level execution/withdrawal attribution
+within the declared horizon. A MODIFY increase forms an episode but exposes
+`attribution_complete=false` and no fractions because generic MBO does not say
+whether subsequent units removed from the order came from its old or added
+quantity. No aggregate price-level execution is assigned to an order.
+
+An absorption cycle is an execution/depletion, followed by replenishment at the
+same original price, followed by execution of attributable replenished
+quantity. It describes price-level behavior and does not require a repeated
+order or participant ID.
+
+## Side Aggregation and Credible Depth
+
+All side fractions use quantities, not a naive mean of order percentages:
 
 [
-CredibleDepth_s=Depth_sLC_s
+SideExecutedFraction=
+\frac{\sum_o ExecutedQuantity_o}{\sum_o ObservedAddedQuantity_o}
 ]
 
-The individual components should remain available rather than retaining only the composite score.
+[
+SideWithdrawalFraction=
+\frac{\sum_o WithdrawnQuantity_o}{\sum_o ObservedAddedQuantity_o}
+]
+
+Shock execution and withdrawal instead use total pre-shock displayed depth as
+their denominator. Both survival views remain explicit:
+
+[
+OrderSurvivalFraction=
+\frac{SurvivingOrderCount}{PreShockOrderCount}
+]
+
+[
+QuantitySurvivalFraction=
+\frac{SurvivingQuantity}{RawDisplayedDepth}
+]
+
+Quantity-weighted order credibility is:
+
+[
+QWOC=
+\frac{\sum_o Q_{o,pre}OC_o}{\sum_o Q_{o,pre}}
+]
+
+The experimental supporting depth is:
+
+[
+CredibleDepth=\sum_o Q_{o,pre}OC_o
+]
+
+[
+CredibleDepthRatio=
+\frac{CredibleDepth}{RawDisplayedDepth}
+]
+
+`QWOC` and `CredibleDepthRatio` are equal for the same attacked region, but raw
+and credible depth are both retained. Credible depth does not replace raw depth
+in existing SRA mathematics.
+
+The optional side-level descriptive score uses these exact initial engineering
+weights:
+
+```text
+w_order          = 0.35
+w_shock_execute  = 0.20
+w_withdraw       = 0.20
+w_replenish      = 0.15
+w_cycles         = 0.10
+```
+
+[
+LC=
+0.35QWOC+
+0.20ShockExecutedFraction+
+0.20(1-ShockWithdrawalFraction)+
+0.15ReplenishmentComponent+
+0.10CycleComponent
+]
+
+The replenishment component equally combines replenishment quantity relative
+to replenishment plus shock-consumed quantity, average exponential speed with
+configurable `tau=5` exchange seconds, executed fraction, and one minus
+withdrawal fraction. No episode yields component zero. Incomplete attribution
+preserves all available episode evidence but makes the optional replenishment
+component and `LC` unavailable. The bounded cycle component is:
+
+[
+CycleComponent=1-\exp(-AbsorptionCycleCount/\tau_{cycles})
+]
+
+with initial configurable `tau_cycles=2`. Components remain exposed
+independently. The configuration also records exact `epsilon=0.000001` for
+policy compatibility, but v1 credibility fractions require positive
+denominators and do not silently regularize or clamp them with epsilon.
+
+For an already valid ordered `ShockPair`, and only when both optional side
+scores exist:
+
+[
+\Delta LC=LC_2-LC_1
+]
+
+Positive DeltaLC means attacked-side displayed liquidity was behaviorally more
+credible during shock 2; negative means less credible. This is not by itself a
+bullish or bearish interpretation.
+
+## Observation Horizon, Availability, and Reproducibility
+
+The initial post-shock observation horizon is exactly 25 **all-normalized-market
+events** after the shock-end event index. The caller supplies these indices;
+sequence numbers and directional trade counts are not substitutes. A shorter
+horizon returns typed unavailability, while a later cutoff is rejected to avoid
+silently changing feature semantics. Every complete result owns its exact
+observation-end event index/reference, exchange time, process time, and:
+
+```text
+available_at_process_time = observation_end_event_reference.process_time
+```
+
+Transitions beyond the cutoff are filtered even if a later-completed lifecycle
+is supplied, so future cancellation or execution cannot leak backward. MBO
+absence, missing event indices, insufficient horizon, RESET, no attacked orders,
+or ambiguous shock-quantity attribution are represented explicitly where
+applicable.
+
+Feature versions are:
+
+```text
+order-lifecycle-v1
+replenishment-episode-v1
+liquidity-credibility-v1
+liquidity-credibility-comparison-v1
+```
+
+See [ADR 0008](decisions/0008-mbo-liquidity-credibility.md).
 
 ---
 
@@ -3996,11 +4309,13 @@ src/sra_nexus/
         shock.py
         impact.py
         resiliency.py
+        lifecycle.py
+        replenishment.py
+        credibility.py
         state.py
         service.py
         curvature.py
         liquidity_flow.py
-        credibility.py
         toxicity.py
         shock_pair.py
         effectiveness.py
@@ -4285,7 +4600,7 @@ Price impact: COMPLETE
 
 Resiliency analysis: COMPLETE
 
-Liquidity credibility: NOT STARTED
+Liquidity credibility: COMPLETE
 
 Toxicity analysis: NOT STARTED
 

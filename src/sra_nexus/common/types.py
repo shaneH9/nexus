@@ -73,6 +73,14 @@ class ShockPairId(_UuidIdentifier):
     """Stable internal identifier for one ordered liquidity-shock comparison."""
 
 
+class OrderLifecycleId(_UuidIdentifier):
+    """Stable internal identifier for one observed provider-order lifecycle."""
+
+
+class ReplenishmentEpisodeId(_UuidIdentifier):
+    """Stable internal identifier for one price-level replenishment episode."""
+
+
 class _OpaqueStringIdentifier(RootModel[str]):
     """Immutable typed wrapper for a provider-defined opaque identifier."""
 

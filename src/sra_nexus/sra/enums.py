@@ -108,3 +108,24 @@ class RecoveryComparisonUnavailableReason(StrEnum):
     SHOCK_1_UNREACHED = "SHOCK_1_UNREACHED"
     SHOCK_2_UNREACHED = "SHOCK_2_UNREACHED"
     BOTH_UNREACHED = "BOTH_UNREACHED"
+
+
+class OrderLifecycleTerminalReason(StrEnum):
+    """Observable reason one tracked MBO lifecycle ended or was censored."""
+
+    EXECUTED = "EXECUTED"
+    CANCELLED = "CANCELLED"
+    DELETED = "DELETED"
+    RESET = "RESET"
+    OBSERVATION_END = "OBSERVATION_END"
+
+
+class LiquidityCredibilityUnavailableReason(StrEnum):
+    """Explicit reason shock-region credibility cannot be calculated."""
+
+    MBO_REQUIRED = "MBO_REQUIRED"
+    EVENT_INDEX_UNAVAILABLE = "EVENT_INDEX_UNAVAILABLE"
+    INSUFFICIENT_OBSERVATION_HORIZON = "INSUFFICIENT_OBSERVATION_HORIZON"
+    RESET_IN_OBSERVATION_WINDOW = "RESET_IN_OBSERVATION_WINDOW"
+    NO_ATTACKED_ORDERS = "NO_ATTACKED_ORDERS"
+    SHOCK_QUANTITY_ATTRIBUTION_UNAVAILABLE = "SHOCK_QUANTITY_ATTRIBUTION_UNAVAILABLE"
