@@ -26,6 +26,23 @@ replay, `storage` separates immutable raw data from reproducible derived data,
 and `monitoring` provides diagnostics. External observations preserve
 `event_time`, `receive_time`, and `process_time`, all in UTC.
 
+Historical empirical research is provider-isolated and preregistered. The first
+offline adapter accepts strict Databento MBO CSV, verifies source SHA-256, replays
+canonical events through the existing SRA pipeline, uses chronological
+walk-forward folds and block permutation, and writes deterministic JSON/Markdown
+evidence. It does not tune SRA, fit alpha, allocate capital, estimate costs, or
+trade. See [the historical data guide](docs/historical-data.md).
+
+Fixture dry run and full execution:
+
+```bash
+python -m sra_nexus.research.run \
+  --experiment examples/historical/fixture_experiment.json \
+  --dry-run
+python -m sra_nexus.research.run \
+  --experiment examples/historical/fixture_experiment.json
+```
+
 ## Repository Layout
 
 ```text

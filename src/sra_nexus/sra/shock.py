@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from decimal import Decimal
 from typing import Self
+from uuid import UUID, uuid5
 
 from pydantic import Field, model_validator
 
@@ -40,6 +41,7 @@ from sra_nexus.sra.windows import (
 )
 
 SHOCK_DETECTION_VERSION = "shock-detection-v1"
+_SHOCK_ID_NAMESPACE = UUID("4381b0a6-4aa6-5ad5-908f-7c7c4b7767f1")
 
 
 class ShockDetectionConfig(ContractModel):
@@ -441,6 +443,7 @@ def materialize_liquidity_shock(
     if features.normalized_aggression is None or features.pre_weighted_opposite_depth == 0:
         raise ValueError("liquidity shock requires available positive normalized aggression")
     return LiquidityShock(
+        shock_id=derive_liquidity_shock_id(features, classification.detection_version),
         instrument_id=features.instrument_id,
         direction=features.direction,
         start_exchange_time=features.start_exchange_time,
@@ -459,6 +462,20 @@ def materialize_liquidity_shock(
         detection_method=classification.method,
         detection_version=classification.detection_version,
     )
+
+
+def derive_liquidity_shock_id(features: ShockFeatures, detection_version: str) -> ShockId:
+    """Derive stable shock identity from immutable event boundaries and version."""
+    identity = "|".join(
+        (
+            str(features.instrument_id),
+            str(features.start_reference.event_id),
+            str(features.end_reference.event_id),
+            features.direction.value,
+            detection_version,
+        )
+    )
+    return ShockId(uuid5(_SHOCK_ID_NAMESPACE, identity))
 
 
 def _evaluate_rule(

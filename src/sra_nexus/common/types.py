@@ -93,6 +93,10 @@ class PermutationTestId(_UuidIdentifier):
     """Stable internal identifier for one reproducible permutation test."""
 
 
+class ResearchRunId(_UuidIdentifier):
+    """Deterministic identity for one experiment, dataset, and code revision."""
+
+
 class _OpaqueStringIdentifier(RootModel[str]):
     """Immutable typed wrapper for a provider-defined opaque identifier."""
 

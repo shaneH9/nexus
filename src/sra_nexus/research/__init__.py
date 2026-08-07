@@ -16,6 +16,21 @@ from sra_nexus.research.enums import (
     PermutationPValueMethod,
     WalkForwardMode,
 )
+from sra_nexus.research.experiment import (
+    ExpectedEffectDirection,
+    HistoricalSourceSpec,
+    HistoricalStructuralBoundary,
+    HypothesisStatus,
+    NamedPermutationConfig,
+    ResearchExperimentSpec,
+    ResearchFeatureName,
+    ResearchHypothesis,
+    ResearchHypothesisKind,
+    ResearchOutputConfig,
+    ResearchStatisticName,
+    calculate_experiment_hash,
+    canonical_experiment_json,
+)
 from sra_nexus.research.export import export_research_dataset_jsonl
 from sra_nexus.research.features import (
     FeatureBuildResult,
@@ -24,6 +39,13 @@ from sra_nexus.research.features import (
     evaluate_failed_aggression_condition,
     feature_availability_from_input,
     select_prediction_anchor,
+)
+from sra_nexus.research.historical_runner import (
+    HistoricalResearchRunner,
+    derive_research_run_id,
+    discover_code_revision,
+    render_markdown_report,
+    write_research_artifacts,
 )
 from sra_nexus.research.labels import (
     DEFAULT_FORWARD_HORIZONS_EVENTS,
@@ -84,6 +106,13 @@ from sra_nexus.research.permutation import (
     summarize_null_distribution,
     summarize_walk_forward_results,
 )
+from sra_nexus.research.results import (
+    FoldHypothesisResult,
+    HistoricalDryRunReport,
+    HistoricalResearchReport,
+    HypothesisTestResult,
+    ResearchRunArtifacts,
+)
 from sra_nexus.research.splits import (
     WalkForwardConfig,
     WalkForwardSplit,
@@ -107,6 +136,7 @@ __all__ = [
     "CredibilityRawComponents",
     "DatasetManifest",
     "EffectivenessFeature",
+    "ExpectedEffectDirection",
     "FeatureAvailability",
     "FeatureBuildResult",
     "FeatureSnapshotConfig",
@@ -114,6 +144,14 @@ __all__ = [
     "ForwardLabel",
     "ForwardLabelConfig",
     "ForwardMarketResponseLabel",
+    "FoldHypothesisResult",
+    "HistoricalDryRunReport",
+    "HistoricalResearchReport",
+    "HistoricalResearchRunner",
+    "HistoricalSourceSpec",
+    "HistoricalStructuralBoundary",
+    "HypothesisStatus",
+    "HypothesisTestResult",
     "LabelBuilder",
     "LabelUnavailableReason",
     "LiquidityCredibilityFeature",
@@ -122,6 +160,7 @@ __all__ = [
     "MeanReversalAdjustedReturn",
     "MedianReversalAdjustedReturn",
     "NullDistributionSummary",
+    "NamedPermutationConfig",
     "PercentileMethod",
     "PermutationAlternative",
     "PermutationBlockUnit",
@@ -136,9 +175,16 @@ __all__ = [
     "ResearchDataset",
     "ResearchDatasetBuilder",
     "ResearchDatasetConfig",
+    "ResearchExperimentSpec",
+    "ResearchFeatureName",
+    "ResearchHypothesis",
+    "ResearchHypothesisKind",
     "ResearchObservation",
+    "ResearchOutputConfig",
     "ResearchPValue",
     "ResearchStatistic",
+    "ResearchStatisticName",
+    "ResearchRunArtifacts",
     "ResiliencyFeature",
     "ReversalSuccessRate",
     "SRAFeatureInput",
@@ -154,6 +200,10 @@ __all__ = [
     "WalkForwardSplitter",
     "adjust_research_p_values",
     "build_permutation_blocks",
+    "calculate_experiment_hash",
+    "canonical_experiment_json",
+    "derive_research_run_id",
+    "discover_code_revision",
     "empirical_permutation_p_value",
     "evaluate_failed_aggression_condition",
     "feature_availability_from_input",
@@ -162,6 +212,8 @@ __all__ = [
     "permute_blocks_preserving_order",
     "permutation_datum_from_observation",
     "select_prediction_anchor",
+    "render_markdown_report",
     "summarize_null_distribution",
     "summarize_walk_forward_results",
+    "write_research_artifacts",
 ]

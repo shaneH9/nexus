@@ -1,0 +1,207 @@
+{
+  "experiment_name": "Milestone L deterministic fixture",
+  "experiment_version": "fixture-v1",
+  "created_at": "2026-08-03T00:00:00Z",
+  "instruments": ["11111111-1111-4111-8111-111111111111"],
+  "venues": ["XNAS"],
+  "research_start": "2026-08-03T14:00:00Z",
+  "research_end": "2026-08-03T15:00:00Z",
+  "sessions": ["REGULAR"],
+  "warmup_event_count": 0,
+  "sources": [
+    {
+      "source_id": "fixture-databento-mbo",
+      "provider": "DATABENTO",
+      "adapter": {
+        "source_paths": ["../../tests/fixtures/historical/databento_mbo_fixture.csv"],
+        "dataset": "FIXTURE.XNAS",
+        "provider_schema_version": "mbo",
+        "price_encoding": "PRETTY_DECIMAL",
+        "instrument_mappings": [
+          {
+            "provider_instrument_id": 101,
+            "publisher_id": 1,
+            "provider_symbol": "SRA",
+            "venue": "XNAS",
+            "instrument": {
+              "instrument_id": "11111111-1111-4111-8111-111111111111",
+              "ticker": "SRA",
+              "exchange": "XNAS",
+              "asset_type": "EQUITY",
+              "currency": "USD",
+              "tick_size": "0.01",
+              "lot_size": "1"
+            }
+          }
+        ],
+        "session_policy": {
+          "exchange_timezone": "America/New_York",
+          "premarket_start": "04:00:00",
+          "regular_start": "09:30:00",
+          "regular_end": "16:00:00",
+          "after_hours_end": "20:00:00"
+        },
+        "process_time_policy": "RECEIVE_TIME",
+        "synthetic_process_offset_microseconds": 0,
+        "snapshot_session_date_offset_days": 0,
+        "allow_native_sequence_gaps": false,
+        "normalization_version": "databento-mbo-normalization-v1"
+      },
+      "expected_files": [
+        {
+          "source_filename": "databento_mbo_fixture.csv",
+          "sha256": "0a59c5512207f0a6e66495eba38d50e49bfd2fa9b7a463d39e981176ed6594cb",
+          "byte_count": 5407
+        }
+      ]
+    }
+  ],
+  "structural_boundaries": [],
+  "shock_research_config": {
+    "shock_detection": {
+      "aggression_window_event_count": 20,
+      "weighted_depth_config": {"weights": ["1", "0.5", "0.25"]},
+      "minimum_normalized_aggression": "0.5",
+      "minimum_aggressive_volume": "100",
+      "minimum_levels_consumed": 1,
+      "minimum_average_aggressive_trade_size": null,
+      "detection_version": "shock-detection-v1"
+    },
+    "impact": {
+      "horizons_events": [1, 2],
+      "impact_version": "impact-v1"
+    },
+    "resiliency": {
+      "depth_levels_k": 3,
+      "recovery_horizons_events": [1, 2],
+      "recovery_thresholds": ["0.5"],
+      "multi_level_weights": ["0.5", "0.3", "0.2"],
+      "epsilon": "0.000001",
+      "resiliency_version": "resiliency-v1"
+    }
+  },
+  "shock_pair_config": {
+    "max_event_distance": 20,
+    "max_exchange_seconds": "60",
+    "min_normalized_aggression_ratio": "0.5",
+    "max_normalized_aggression_ratio": "2.0",
+    "require_same_direction": true,
+    "required_impact_horizons_events": [1, 2],
+    "required_resiliency_horizons_events": [1, 2],
+    "required_recovery_thresholds": ["0.5"],
+    "epsilon": "0.000001",
+    "effectiveness_stability_tolerance": "0.000001",
+    "comparison_version": "shock-pair-v1"
+  },
+  "dataset_config": {
+    "feature_config": {
+      "depth_levels": 3,
+      "weighted_depth_config": {"weights": ["1", "0.5", "0.25"]},
+      "backward_horizons_events": [1, 2],
+      "feature_version": "sra-feature-snapshot-v1"
+    },
+    "label_config": {
+      "horizons_events": [1, 2],
+      "label_version": "forward-market-response-label-v1"
+    },
+    "dataset_version": "sra-research-dataset-v1"
+  },
+  "walk_forward_config": {
+    "mode": "EXPANDING",
+    "minimum_train_observations": 2,
+    "rolling_train_observations": null,
+    "test_observations": 2,
+    "step_observations": 2,
+    "maximum_label_horizon_events": 2,
+    "embargo_event_count": 0,
+    "embargo_exchange_seconds": null,
+    "split_version": "walk-forward-split-v1"
+  },
+  "permutation_configurations": [
+    {
+      "config_id": "failed-aggression-null",
+      "configuration": {
+        "permutation_count": 19,
+        "seed": 1729,
+        "block_size": 2,
+        "block_unit": "NORMALIZED_EVENT_COUNT",
+        "within_instrument": true,
+        "session_restricted": true,
+        "alternative": "GREATER",
+        "statistic_name": "ConditionalMeanReversalReturn",
+        "max_exact_permutations": 10000,
+        "mode": "MONTE_CARLO",
+        "max_label_horizon_events": 2,
+        "accept_observation_count_overlap_risk": false,
+        "preserve_null_statistics": false,
+        "test_version": "block-label-permutation-v2"
+      }
+    },
+    {
+      "config_id": "recent-return-baseline-null",
+      "configuration": {
+        "permutation_count": 19,
+        "seed": 1729,
+        "block_size": 2,
+        "block_unit": "NORMALIZED_EVENT_COUNT",
+        "within_instrument": true,
+        "session_restricted": true,
+        "alternative": "TWO_SIDED",
+        "statistic_name": "CovarianceAssociation",
+        "max_exact_permutations": 10000,
+        "mode": "MONTE_CARLO",
+        "max_label_horizon_events": 2,
+        "accept_observation_count_overlap_risk": false,
+        "preserve_null_statistics": false,
+        "test_version": "block-label-permutation-v2"
+      }
+    }
+  ],
+  "hypotheses": [
+    {
+      "hypothesis_id": "H1_FAILED_AGGRESSION",
+      "description": "Predeclared failed-aggression condition predicts gross reversal response.",
+      "kind": "FAILED_AGGRESSION",
+      "feature": null,
+      "expected_direction": "POSITIVE",
+      "statistic": "ConditionalMeanReversalReturn",
+      "forward_horizon_events": 2,
+      "alternative": "GREATER",
+      "permutation_config_reference": "failed-aggression-null",
+      "effectiveness_horizon_events": 1,
+      "resiliency_horizon_events": 1,
+      "backward_horizon_events": null,
+      "delta_ae_threshold": "0",
+      "delta_rr_threshold": "0",
+      "liquidity_credibility_threshold": "0",
+      "toxicity_threshold": "0"
+    },
+    {
+      "hypothesis_id": "H2_RECENT_RETURN_BASELINE",
+      "description": "Predeclared recent-return baseline association at the same gross horizon.",
+      "kind": "BASELINE_FEATURE",
+      "feature": "RECENT_RETURN",
+      "expected_direction": "NEGATIVE",
+      "statistic": "CovarianceAssociation",
+      "forward_horizon_events": 2,
+      "alternative": "TWO_SIDED",
+      "permutation_config_reference": "recent-return-baseline-null",
+      "effectiveness_horizon_events": null,
+      "resiliency_horizon_events": null,
+      "backward_horizon_events": 1,
+      "delta_ae_threshold": "0",
+      "delta_rr_threshold": "0",
+      "liquidity_credibility_threshold": "0",
+      "toxicity_threshold": "0"
+    }
+  ],
+  "output": {
+    "root_directory": "../../research_runs",
+    "reuse_identical_completed_run": true
+  },
+  "seed": 1729,
+  "limitations": [
+    "Synthetic redistributable fixture; no claim of real-data validation."
+  ],
+  "spec_version": "historical-research-experiment-v1"
+}

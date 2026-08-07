@@ -121,6 +121,7 @@ from sra_nexus.sra.shock import (
     calculate_level_penetration,
     calculate_normalized_aggression,
     classify_shock,
+    derive_liquidity_shock_id,
     materialize_liquidity_shock,
 )
 from sra_nexus.sra.shock_pair import (
@@ -367,6 +368,7 @@ __all__ = [
     "elapsed_decimal_seconds",
     "market_event_reference",
     "materialize_liquidity_shock",
+    "derive_liquidity_shock_id",
     "interpret_effectiveness_change",
     "identify_replenishment_episodes",
     "classify_flow_direction",

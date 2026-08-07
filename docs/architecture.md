@@ -5178,7 +5178,237 @@ significant. See
 
 ---
 
-# 74. Implementation Status
+# 74. Historical Market Data and Preregistered Research Execution
+
+Milestone L freezes the existing SRA hypothesis before exposing it to historical
+files. Normalized aggression, liquidity-shock classification, directional price
+impact, replenishment ratio, recovery time, aggressor effectiveness, `DeltaAE`,
+absorption efficiency, liquidity credibility, toxicity, and failed-aggression
+comparison retain their existing equations, thresholds, weights, and versions.
+Weak empirical results do not authorize the runner to tune them. A changed
+strategy must become a separately versioned and preregistered hypothesis.
+
+## Provider Boundary and First Format
+
+`HistoricalMarketDataAdapter` is a streaming protocol with `provider_name`,
+`format_version`, `discover`, `inspect`, and `normalize`. Provider field names
+end under `market_data/providers/<provider>/`; replay, SRA, and research code see
+only canonical `BookEvent`, `TradeEvent`, and `QuoteEvent` values plus a separate
+historical provenance envelope.
+
+The first implementation is standard-library parsing of Databento historical
+MBO CSV (`databento-mbo-csv-v1`). Databento documents MBO as full order-level
+data keyed by order ID and documents the action, side, timestamp, sequence, and
+flag semantics used here:
+
+- [Databento MBO schema](https://databento.com/docs/schemas-and-data-formats/mbo)
+- [Databento common fields, actions, and flags](https://databento.com/docs/standards-and-conventions/common-fields-enums-types)
+- [Databento MBO snapshots](https://databento.com/docs/standards-and-conventions/mbo-snapshot)
+
+The required CSV fields are `ts_recv`, `ts_event`, `rtype`, `publisher_id`,
+`instrument_id`, `action`, `side`, `price`, `size`, `channel_id`, `order_id`,
+`flags`, `ts_in_delta`, `sequence`, and `symbol`. `rtype` must be 160. Prices are
+configured as pretty decimal text or fixed 1e-9 integers. The Databento batch
+request must enable its optional symbol-field customization. Nanosecond integer
+timestamps are deterministically floored to Python's UTC microsecond precision;
+the exact source bytes remain identified in the manifest.
+
+`A`, `M`, and ordinary `C` records become exact MBO mutations, while `R` becomes
+an explicit reset. Databento documents that `T` and `F` do not mutate the book
+and a matching `C` carries the displayed reduction. A same-native-sequence
+`T/F/C` group therefore becomes one canonical `EXECUTE` followed by one
+canonical `TradeEvent`, joined by a deterministic trade ID. Reconciliation owns
+economic volume once through the trade observation. `F_MBP`, `F_TOB`, bad-book
+flags, invalid sides/prices/quantities, malformed records, and unexplained
+sequences are rejected rather than repaired.
+
+Databento recovery snapshots are an explicit exception to ordinary native
+sequence checks. Snapshot records preserve historical order priority rather
+than forming a contiguous event stream, and their documented
+`F_SNAPSHOT | F_BAD_TS_RECV` combination is accepted. `R` and subsequent `A`
+records still receive a new contiguous canonical sequence. The configurable
+`snapshot_session_date_offset_days` associates a provider snapshot with the
+intended exchange session; this must be set from the acquired file's documented
+snapshot convention. Snapshot records are admitted as reconstruction warm-up
+even when the experiment reports only the regular session.
+
+Normalization is incremental: the adapter yields one
+`HistoricalNormalizedEvent` at a time. The runner currently retains one session
+of normalized states because exact response windows and labels need random
+event-index access; it does not materialize a multi-day file inside the adapter.
+
+## Inspection, Source Identity, and Manifest
+
+Pre-flight inspection is non-mutating and reports SHA-256/byte size, schema,
+raw and estimated canonical counts, provider instruments, symbols, venues,
+timestamp and sequence ranges, actions, MBO mode, missing/malformed fields,
+clock problems, gaps, regressions, duplicates, and unsupported flags. It never
+repairs a file. A configured expected `(filename, SHA-256, byte_count)` must
+match before replay.
+
+`HistoricalDataManifest` retains provider/format, exact source identities,
+canonical instruments and venues, event-time coverage, variant counts,
+normalization version, process-time policy, synthetic-time disclosure, exact
+instrument mappings, and an experiment-supplied deterministic creation time.
+Provider symbols are never internal keys. Each explicit mapping binds
+`publisher_id + provider_instrument_id + provider_symbol + venue` to a canonical
+`InstrumentId` and may have a UTC half-open effective interval.
+
+## Sessions, Timezones, Clocks, and Structural Breaks
+
+All canonical clocks are UTC-aware. Exchange-local session interpretation uses
+an explicit IANA timezone and configured premarket/regular/after-hours cutoffs;
+the machine timezone is irrelevant. Session IDs include venue and exchange-local
+date. The default is a new structural boundary and new order book for every
+session, so a shock, recovery window, shock pair, or label never crosses days.
+
+Historical files do not contain the time at which SRA-Nexus originally processed
+the record. `HistoricalProcessTimePolicy.RECEIVE_TIME` deterministically sets
+`process_time = receive_time`. The alternative sets
+`process_time = exchange_time + configured_offset`, and is rejected if that
+would precede receive time. Both are marked synthetic; file-read wall time is
+never used as historical availability.
+
+Resets and configured halt/corporate-action boundaries increment the runner's
+structural segment and clear pending shock matching. No pair crosses such a
+segment. Full status-schema halt discovery and corporate-action price adjustment
+are deferred; callers must configure known boundaries or exclude incompatible
+history. An unexplained sequence gap fails by default. Explicit acceptance can
+support adapter-only diagnostic normalization, but the research runner still
+refuses the unresolved scope; a gap is never treated as ordinary continuity.
+
+## HistoricalResearchRunner
+
+The high-level flow is:
+
+```text
+ResearchExperimentSpec
+  -> inspect and verify source SHA-256
+  -> stream provider normalization
+  -> chronological MarketReplay / OrderBook
+  -> existing ShockResearchService
+  -> existing ShockPairService
+  -> existing ResearchDatasetBuilder
+  -> existing WalkForwardSplitter
+  -> existing PermutationTestService
+  -> Bonferroni and Benjamini-Hochberg disclosure
+  -> deterministic JSON and Markdown artifacts
+```
+
+The runner treats each matched displayed execution and trade as one explicit
+initial episode boundary. This is a pipeline policy, not a change to shock
+mathematics. Materialized shock UUIDs derive deterministically from immutable
+event boundaries, direction, and detection version. Pairs are adjacent
+same-segment candidates and use the true count of all normalized market events
+strictly between shock 1 end and shock 2 start.
+
+Warm-up events may establish the book and backward-looking features, but no
+observation is emitted before `research_start`. Exact event-index state at the
+prediction anchor is retained for future news, cost, and execution joins without
+implementing those later layers now.
+
+## Frozen Experiment and Hypothesis Registry
+
+`ResearchExperimentSpec` is immutable and includes name/version, deterministic
+creation time, instruments, venues, half-open UTC scope, session segments,
+warm-up count, exact source specs, configured structural boundaries, unchanged
+SRA/shock-pair/dataset policies, label horizons, walk-forward purge/embargo,
+named permutation configurations, ordered hypotheses, output policy, seed, and
+limitations.
+
+Every `ResearchHypothesis` preregisters ID, description, condition or continuous
+feature, expected sign, statistic, one forward horizon, alternative, and one
+named permutation configuration. Failed aggression uses exact declared
+effectiveness/resiliency horizons and thresholds such as `DeltaAE < 0 AND
+DeltaRR > 0`. Optional secondary `DeltaLC` and toxicity conditions become
+`UNAVAILABLE` when those upstream features were not constructed; they are never
+silently dropped or promoted. Continuous `DeltaAE`, `DeltaLC`, `DeltaToxicity`,
+OBI, microprice offset, and exact-horizon recent return are supported without a
+fitted model. There is no candidate-threshold loop or result-dependent mutation.
+
+The report preserves every declaration in order with `RUN`, `UNAVAILABLE`, or
+`FAILED_VALIDATION`. The fixture preregisters a primary failed-aggression
+conditional mean and a recent-return covariance baseline at the same forward
+horizon.
+
+## Experiment, Dataset, and Run Identity
+
+Canonical experiment JSON uses Pydantic JSON values, lexicographically sorted
+keys, compact separators, and no insignificant whitespace. Local source paths
+are replaced by their expected filenames/hashes and the output root by a stable
+placeholder, so moving identical bytes/configuration does not change the tested
+hypothesis identity. The identity is:
+
+```text
+ExperimentHash = SHA256(canonical_experiment_json)
+```
+
+`ResearchRunId` is UUIDv5 over the experiment hash, SHA-256 of the deterministic
+dataset manifest, and Git revision (or explicit `UNKNOWN`). It does not rely on
+wall-clock time.
+
+## Walk-Forward and Permutation Execution
+
+The runner invokes the existing Milestone K splitter and tests only IDs in each
+test fold. Training rows are not pooled into evidence. Every fold retains its
+test interval, available and qualifying counts, block count, observed statistic,
+complete permutation result, or explicit unavailability.
+
+Each named permutation configuration passes seed, normalized-event block unit,
+block size, alternative, mode, count, restrictions, and exact-test limit to the
+existing service unchanged. Predeclared sensitivity requires separate named
+configurations/results. Pooled testing, when available, uses the union of usable
+test-fold rows and assigns the fold ID as an additional permutation stratum;
+labels can permute only within their original fold. This explicitly defines the
+pooled null. P-values are never averaged.
+
+For every pooled run result, the report retains observed statistic, null mean
+and deviation, observed-minus-null mean, optional standardized effect, raw
+p-value, Bonferroni p-value, BH-FDR p-value, total and qualifying sample sizes,
+block count, permutation count, configuration, and all fold evidence. Unavailable
+declarations remain in the same multiple-hypothesis registry but do not receive
+fabricated p-values.
+
+## Data Quality, Reports, and Storage
+
+`HistoricalDataQualityReport` discloses gaps, regressions, duplicates, resets,
+structural breaks, invalid records, one-sided states, unknown aggressor counts,
+directional coverage, unknown-flow share, missing hypothesis features, and
+unavailable labels. It is not a pass/fail marketing summary.
+
+The immutable output directory is:
+
+```text
+research_runs/<experiment_hash>/
+  experiment.json
+  data_manifest.json
+  data_quality.json
+  dataset_manifest.json
+  results.json
+  report.md
+```
+
+Substantive artifacts exclude elapsed runtime and are byte-deterministic. The
+returned operational result/CLI separately reports events, observations, and
+elapsed seconds. An existing completed directory is reused only when every
+artifact is byte-identical; otherwise execution fails instead of overwriting.
+
+Normalized-event and dataset cache/checkpoint formats are intentionally deferred.
+Their future identities must include source hash + normalization/mapping policy,
+and normalized identity + SRA/dataset/label policy respectively.
+
+Only synthetic redistributable fixtures are committed. `historical_data/`,
+`data/`, and generated `research_runs/` are ignored. Users must acquire and use
+licensed files under their provider/exchange terms. See
+[Historical data guide](historical-data.md) for exact inspection and CLI steps.
+
+Milestone L evaluates gross predictive information. It implements no alpha
+model, NewsState fusion, economic cost deduction, allocation, execution,
+brokerage adapter, or live decision. Those boundaries remain unchanged.
+
+---
+
+# 75. Implementation Status
 
 Repository scaffold: COMPLETE
 
@@ -5222,6 +5452,14 @@ Walk-forward splitting: COMPLETE
 
 Permutation testing: COMPLETE
 
+Historical provider architecture: COMPLETE
+
+Historical research runner: COMPLETE
+
+Predeclared experiment framework: COMPLETE
+
+Real-data validation: NOT STARTED
+
 Alpha model: NOT STARTED
 
 Portfolio optimizer: NOT STARTED
@@ -5230,6 +5468,6 @@ Execution simulator: NOT STARTED
 
 Risk engine: NOT STARTED
 
-Historical replay: NOT STARTED
+Historical replay: COMPLETE
 
 Paper trading: NOT STARTED

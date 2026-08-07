@@ -32,4 +32,6 @@ env/
 # Local research artifacts and source data
 data/
 artifacts/
+research_runs/
+historical_data/
 notebooks/.ipynb_checkpoints/
