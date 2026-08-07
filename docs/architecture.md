@@ -5037,18 +5037,56 @@ shuffling would destroy those properties and is not implemented as the default
 null.
 
 For a declared statistic (T), features and row order remain fixed. Within each
-permutation stratum, chronological labels are partitioned into consecutive
-event-count blocks of configured size. Whole label blocks are reassigned to the
-fixed feature rows; label order inside each block is unchanged. A final partial
-block remains a whole block. This tests the null that the declared feature/label
-alignment is exchangeable at the block-assignment level while preserving more
-local label dependence than row-wise shuffle.
+permutation pool, chronological labels are partitioned into blocks. Whole source
+label blocks are reassigned to the fixed feature rows; label order inside each
+source block is unchanged. Empty event spans create no synthetic rows, and a
+final partial span remains a whole block. This tests the null that the declared
+feature/label alignment is exchangeable at the block-assignment level while
+preserving more local label dependence than row-wise shuffle.
 
-The initial implementation supports normalized-event-count blocks. Predeclared
-sensitivity values are `25, 50, 100, 250` observations. They are engineering
-defaults and must not be searched for the lowest p-value. Configuration rejects
-`block_size < max_label_horizon_events` because of overlapping forward labels.
-Exchange-time block construction and session block construction are deferred.
+For `PermutationBlockUnit.NORMALIZED_EVENT_COUNT`, block membership is based on
+`PermutationDatum.prediction_anchor_event_index`, not the ordinal position of a
+`ResearchObservation`. Given event width (B), each coordinate stratum has the
+deterministic origin:
+
+[
+Origin_s=\min_{i\in s}PredictionAnchorEventIndex_i
+]
+
+and observation (i) belongs to:
+
+[
+BlockNumber_i=
+\left\lfloor
+\frac{PredictionAnchorEventIndex_i-Origin_s}{B}
+\right\rfloor
+]
+
+The origin is calculated independently for every instrument/venue coordinate
+system inside the applicable caller restriction. Consequently, sparse event
+indices create separate blocks even when their research rows are adjacent, and
+one event-span block may contain more than (B) research rows if multiple
+observations share event anchors. Blocks may contain unequal row counts.
+
+The default permutation identity is `(instrument_id, venue)`: venue is explicit
+because normalized event indices are venue-specific market coordinates.
+Caller-supplied session and generic permutation-stratum values further split
+the pool and receive independent origins. Cross-instrument exchange remains an
+explicit opt-in and is restricted to a common venue; even then, event-block
+origins are calculated separately for each instrument/venue before completed
+blocks enter the shared pool. Event-index coordinate systems are never combined
+to calculate a boundary.
+
+Predeclared normalized-event sensitivity widths are `25, 50, 100, 250` events.
+They are engineering defaults and must not be searched for the lowest p-value.
+Only normalized-event blocks apply the dimensionally valid overlap check
+`block_size >= max_label_horizon_events`.
+
+The former row-slice behavior is retained only under the explicit
+`RESEARCH_OBSERVATION_COUNT` unit. It requires
+`accept_observation_count_overlap_risk=true`; its row count is never compared
+with an event-count label horizon. Exchange-time and session block construction
+remain deferred.
 
 Permutation occurs within instrument by default. Cross-instrument exchange is
 an explicit opt-in and is marked in result metadata. If the caller supplies
@@ -5059,21 +5097,40 @@ interface for future volatility, time-of-day, spread, or liquidity regime
 restrictions; Milestone K performs no regime inference.
 
 `MONTE_CARLO` uses standard-library `random.Random` with an explicit seed and
-draws exactly (B) valid block permutations, allowing repeated draws or the
-identity. `EXACT` enumerates the Cartesian product of every within-stratum block
-ordering, including identity, only when its factorial count does not exceed
+draws exactly (B) valid block permutations independently with replacement.
+Duplicate block orders, as well as the identity, are therefore intentional
+Monte Carlo samples. `EXACT` enumerates the Cartesian product of every
+within-stratum block ordering, including identity exactly once and with no
+duplicate orderings, only when its factorial count does not exceed
 `max_exact_permutations`. Exact mode's count is the number of arrangements;
 Monte Carlo mode's count is the configured sample size.
 
-For a greater-tail statistic, ties are included and the empirical p-value is:
+For a greater-tail Monte Carlo statistic, ties are included and the plus-one
+estimator is:
 
 [
 p=\frac{1+\#\{T_b\ge T_{observed}\}}{B+1}
 ]
 
-The less alternative uses `<=`. The initial two-sided alternative compares
-`abs(T_b) >= abs(T_observed)` around the statistic's declared zero null. The
-same plus-one equation is used consistently for sampled and enumerated nulls.
+For exhaustive exact enumeration with (N) complete arrangements, including the
+identity, ties are also included and no Monte Carlo correction is applied:
+
+[
+p_{exact}=\frac{\#\{T_n\ge T_{observed}\}}{N}
+]
+
+The less alternative replaces `>=` with `<=`. `TWO_SIDED` does not silently
+assume every statistic has a zero null. It uses the arithmetic mean of the
+generated null distribution as the explicit null center and counts values
+satisfying:
+
+[
+|T_b-Mean(T_{null})|\ge|T_{observed}-Mean(T_{null})|
+]
+
+The result retains that center. Statistics for which the null mean is not an
+appropriate two-sided center must use a predeclared one-sided alternative until
+a statistic-specific center policy is introduced.
 
 Initial generic statistics are mean and median reversal-adjusted return,
 strict-positive reversal success rate, population covariance with a continuous
@@ -5081,11 +5138,19 @@ feature, upper-minus-lower feature-quantile mean return, and mean return under a
 caller-predeclared condition such as `DeltaAE < 0 AND DeltaRR > 0`. The
 condition and thresholds are inputs, not fitted by this layer.
 
-Each `PermutationTestResult` identifies statistic, horizon, block policy,
-instrument scope, split, seed, feature or condition, mode, and test version. It
-retains observed statistic, p-value, null mean, population standard deviation,
-and nearest-rank 5th/50th/95th percentiles where rank is `ceil(p * B)`. Null
+Each `PermutationTestResult` identifies statistic, horizon, block unit, block
+size measured in that unit, instrument scope, split, seed, feature or condition,
+mode, permutation count, typed p-value method (`MONTE_CARLO_PLUS_ONE` or
+`EXACT_ENUMERATION`), and test version. It retains observed statistic, p-value,
+null mean, optional two-sided null center, population standard deviation, and
+nearest-rank 5th/50th/95th percentiles where rank is `ceil(p * B)`. Null
 statistics are optional. Effect sizes are:
+
+The corrected event-span and p-value semantics are versioned as:
+
+```text
+block-label-permutation-v2
+```
 
 [
 ObservedMinusNullMean=T_{observed}-Mean(T_b)

@@ -49,21 +49,47 @@ rows immediately after the candidate training boundary. Excluded rows are not
 moved into training.
 
 Permutation testing is the primary initial significance framework. The default
-null keeps feature rows fixed, divides chronological labels into blocks, and
-permutes whole label blocks within instrument. Order inside each label block is
-preserved. Cross-instrument permutation is opt-in. Real caller-supplied session
-or generic stratum metadata can further restrict exchangeability; sessions and
-regimes are not inferred. Block size must be at least the maximum relevant
-label horizon.
+null keeps feature rows fixed and permutes whole chronological label blocks
+within the applicable pool. Order inside each source label block is preserved.
+For `NORMALIZED_EVENT_COUNT`, each `(instrument_id, venue)` coordinate stratum
+uses the minimum prediction-anchor event index as its deterministic origin, and
+assigns a row to `(anchor_index - origin) // block_size_events`. Missing market
+events do not create rows, so blocks can be sparse and contain unequal research
+row counts. Venue is part of the default market identity because event indices
+are venue-specific coordinates.
 
-Seeded Monte Carlo mode samples a configured number of valid block orders.
-Exact mode enumerates all within-stratum block-order combinations only below an
-explicit safety limit. Empirical p-values use plus-one correction and include
-ties. Results retain null summaries, raw effect size, optional standardized
-effect, fold, horizon, block, seed, instrument scope, and feature/condition
-metadata. Bonferroni and Benjamini-Hochberg corrections are reported alongside
-raw p-values when multiple hypotheses are evaluated. Individual walk-forward
-fold results remain visible; this ADR does not select a sophisticated p-value
+Cross-instrument permutation is opt-in and remains within venue. Its event
+boundaries and origins are still calculated independently for each
+instrument/venue before whole blocks enter a shared pool. Real caller-supplied
+session or generic stratum metadata further restrict exchangeability and create
+independent origins; sessions and regimes are not inferred.
+
+The prior row-count behavior remains available only as
+`RESEARCH_OBSERVATION_COUNT`. Because research-row count and event-horizon count
+are different units, this mode requires explicit caller acceptance of overlap
+risk. The `block_size >= max_label_horizon_events` validation applies only to
+`NORMALIZED_EVENT_COUNT`.
+
+Seeded Monte Carlo mode samples a configured number of valid block orders with
+replacement. Duplicate draws and identity draws are intentional. Its p-value
+includes ties and uses `(1 + extreme_count) / (B + 1)`. Exact mode enumerates
+each allowed Cartesian-product block ordering exactly once, including identity,
+only below an explicit safety limit; its p-value is
+`extreme_count / total_exact_permutations`, without a Monte Carlo correction.
+
+Two-sided extremeness is measured relative to the arithmetic mean of the
+generated null: `abs(T_perm - null_mean) >= abs(T_observed - null_mean)`. This
+center is retained in result metadata. A statistic for which that center is not
+appropriate must use a predeclared one-sided test until an explicit
+statistic-specific center policy exists.
+
+Results retain null summaries, raw effect size, optional standardized effect,
+fold, horizon, block unit, size in that unit, seed, instrument scope, mode,
+permutation count, typed p-value method, and feature/condition metadata.
+The semantic correction is identified by `block-label-permutation-v2`.
+Bonferroni and Benjamini-Hochberg corrections are reported alongside raw
+p-values when multiple hypotheses are evaluated. Individual walk-forward fold
+results remain visible; this ADR does not select a sophisticated p-value
 combination rule.
 
 Dataset version, contributing feature versions, immutable configuration,
@@ -120,10 +146,10 @@ and larger blocks reduce the number of independent block arrangements. Exact
 tests can become infeasible, so reproducible Monte Carlo sampling is necessary.
 
 Block permutation preserves more local label dependence than row shuffle but
-does not prove full exchangeability. Event-count blocks are the initial method;
-exchange-time/session block construction and regime-aware restrictions remain
-future extensions. Sensitivity across predeclared block sizes must be disclosed,
-not optimized for significance.
+does not prove full exchangeability. Normalized-event-span blocks are the
+initial method; exchange-time/session block construction and regime-aware
+restrictions remain future extensions. Sensitivity across predeclared block
+sizes must be disclosed, not optimized for significance.
 
 The framework can falsify simple SRA and baseline relationships and report
 effect size with multiplicity disclosure. It does not prove economic viability,

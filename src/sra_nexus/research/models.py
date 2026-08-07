@@ -21,7 +21,7 @@ RESEARCH_DATASET_VERSION = "sra-research-dataset-v1"
 FEATURE_SNAPSHOT_VERSION = "sra-feature-snapshot-v1"
 LABEL_VERSION = "forward-market-response-label-v1"
 WALK_FORWARD_SPLIT_VERSION = "walk-forward-split-v1"
-PERMUTATION_TEST_VERSION = "block-label-permutation-v1"
+PERMUTATION_TEST_VERSION = "block-label-permutation-v2"
 
 UnitIntervalDecimal = Annotated[
     ExactDecimal,

@@ -32,6 +32,7 @@ from sra_nexus.research.enums import (
     PermutationAlternative,
     PermutationBlockUnit,
     PermutationMode,
+    PermutationPValueMethod,
 )
 from sra_nexus.research.labels import ForwardMarketResponseLabel
 from sra_nexus.research.models import PERMUTATION_TEST_VERSION, UnitIntervalDecimal
@@ -89,14 +90,25 @@ class PermutationTestConfig(ContractModel):
     max_exact_permutations: int = Field(default=10_000, gt=0)
     mode: PermutationMode = PermutationMode.MONTE_CARLO
     max_label_horizon_events: int = Field(default=250, gt=0)
+    accept_observation_count_overlap_risk: bool = False
     preserve_null_statistics: bool = False
     test_version: NonBlankStr = PERMUTATION_TEST_VERSION
 
     @model_validator(mode="after")
     def validate_overlap_safety(self) -> Self:
-        """Reject block lengths shorter than overlapping forward-label horizons."""
-        if self.block_size < self.max_label_horizon_events:
+        """Apply only safety checks whose dimensions match the selected block unit."""
+        if (
+            self.block_unit is PermutationBlockUnit.NORMALIZED_EVENT_COUNT
+            and self.block_size < self.max_label_horizon_events
+        ):
             raise ValueError("block_size must be at least max_label_horizon_events")
+        if (
+            self.block_unit is PermutationBlockUnit.RESEARCH_OBSERVATION_COUNT
+            and not self.accept_observation_count_overlap_risk
+        ):
+            raise ValueError(
+                "research-observation-count blocks require explicit acceptance of overlap risk"
+            )
         return self
 
 
@@ -121,6 +133,7 @@ class PermutationTestResult(ContractModel):
     p_value: UnitIntervalDecimal
     alternative: PermutationAlternative
     permutation_mode: PermutationMode
+    p_value_method: PermutationPValueMethod
     permutation_count: int = Field(gt=0)
     seed: int
     block_size: int = Field(gt=0)
@@ -132,6 +145,7 @@ class PermutationTestResult(ContractModel):
     configuration: PermutationTestConfig
     observed_minus_null_mean: ExactDecimal
     standardized_effect: ExactDecimal | None
+    two_sided_null_center: ExactDecimal | None
     null_statistics: tuple[ExactDecimal, ...] | None
     test_version: NonBlankStr = PERMUTATION_TEST_VERSION
 
@@ -148,6 +162,14 @@ class PermutationTestResult(ContractModel):
             raise ValueError("standardized effect is inconsistent")
         if self.null_statistics is not None and len(self.null_statistics) != self.permutation_count:
             raise ValueError("preserved null count must equal permutation_count")
+        expected_method = _p_value_method(self.configuration.mode)
+        if self.p_value_method is not expected_method:
+            raise ValueError("p-value method must match permutation mode")
+        if self.alternative is PermutationAlternative.TWO_SIDED:
+            if self.two_sided_null_center != self.null_summary.mean:
+                raise ValueError("two-sided null center must equal the null mean")
+        elif self.two_sided_null_center is not None:
+            raise ValueError("one-sided tests must not declare a two-sided null center")
         if (
             self.seed != self.configuration.seed
             or self.block_size != self.configuration.block_size
@@ -329,7 +351,13 @@ class PermutationTestService:
             statistic(_apply_assignment(canonical, assignment)) for assignment in assignments
         )
         summary = summarize_null_distribution(null_values)
-        p_value = empirical_permutation_p_value(observed, null_values, config.alternative)
+        p_value_method = _p_value_method(config.mode)
+        p_value = empirical_permutation_p_value(
+            observed,
+            null_values,
+            config.alternative,
+            method=p_value_method,
+        )
         effect = observed - summary.mean
         standardized = (
             None if summary.standard_deviation == 0 else effect / summary.standard_deviation
@@ -349,6 +377,7 @@ class PermutationTestService:
             p_value=p_value,
             alternative=config.alternative,
             permutation_mode=config.mode,
+            p_value_method=p_value_method,
             permutation_count=len(null_values),
             seed=config.seed,
             block_size=config.block_size,
@@ -360,6 +389,9 @@ class PermutationTestService:
             configuration=config,
             observed_minus_null_mean=effect,
             standardized_effect=standardized,
+            two_sided_null_center=(
+                summary.mean if config.alternative is PermutationAlternative.TWO_SIDED else None
+            ),
             null_statistics=null_values if config.preserve_null_statistics else None,
             test_version=config.test_version,
         )
@@ -425,17 +457,10 @@ def generate_permuted_label_assignments(
     config: PermutationTestConfig,
 ) -> tuple[tuple[PermutedLabelAssignment, ...], ...]:
     """Generate block-preserving label assignments under explicit strata."""
-    if config.block_unit is not PermutationBlockUnit.NORMALIZED_EVENT_COUNT:
-        raise NotImplementedError("initial permutation supports normalized-event-count blocks")
     canonical = _canonical_data(data)
-    grouped_indices = _grouped_indices(canonical, config)
-    blocks = {
-        key: tuple(
-            tuple(indices[start : start + config.block_size])
-            for start in range(0, len(indices), config.block_size)
-        )
-        for key, indices in grouped_indices.items()
-    }
+    plans = _build_block_plans(canonical, config)
+    grouped_indices = {key: plan.target_indices for key, plan in plans.items()}
+    blocks = {key: plan.blocks for key, plan in plans.items()}
     if config.mode is PermutationMode.EXACT:
         count = _exact_permutation_count(blocks)
         if count > config.max_exact_permutations:
@@ -446,6 +471,20 @@ def generate_permuted_label_assignments(
     return tuple(
         _assignment_for_orders(canonical, grouped_indices, blocks, orders)
         for orders in order_iterator
+    )
+
+
+def build_permutation_blocks(
+    data: Sequence[PermutationDatum],
+    config: PermutationTestConfig,
+) -> tuple[tuple[PermutationDatum, ...], ...]:
+    """Expose deterministic block membership for audit and research validation."""
+    canonical = _canonical_data(data)
+    plans = _build_block_plans(canonical, config)
+    return tuple(
+        tuple(canonical[index] for index in block)
+        for plan in plans.values()
+        for block in plan.blocks
     )
 
 
@@ -465,8 +504,10 @@ def empirical_permutation_p_value(
     observed: Decimal,
     null_statistics: Sequence[Decimal],
     alternative: PermutationAlternative,
+    *,
+    method: PermutationPValueMethod,
 ) -> Decimal:
-    """Return ``(1 + as-or-more-extreme count) / (B + 1)`` including ties."""
+    """Calculate an exact or Monte Carlo p-value, including boundary ties."""
     null_values = tuple(null_statistics)
     if not null_values:
         raise ValueError("empirical p-value requires at least one null statistic")
@@ -475,7 +516,11 @@ def empirical_permutation_p_value(
     elif alternative is PermutationAlternative.LESS:
         extreme_count = sum(value <= observed for value in null_values)
     else:
-        extreme_count = sum(abs(value) >= abs(observed) for value in null_values)
+        null_center = _mean(null_values)
+        observed_distance = abs(observed - null_center)
+        extreme_count = sum(abs(value - null_center) >= observed_distance for value in null_values)
+    if method is PermutationPValueMethod.EXACT_ENUMERATION:
+        return Decimal(extreme_count) / Decimal(len(null_values))
     return Decimal(1 + extreme_count) / Decimal(len(null_values) + 1)
 
 
@@ -522,6 +567,14 @@ type _BlockIndex = tuple[int, ...]
 type _BlockOrders = dict[_StratumKey, tuple[int, ...]]
 
 
+@dataclass(frozen=True, slots=True)
+class _BlockPlan:
+    """Fixed target rows and chronological source blocks for one permutation pool."""
+
+    target_indices: tuple[int, ...]
+    blocks: tuple[_BlockIndex, ...]
+
+
 def _canonical_data(data: Sequence[PermutationDatum]) -> tuple[PermutationDatum, ...]:
     values = tuple(
         sorted(
@@ -541,7 +594,7 @@ def _canonical_data(data: Sequence[PermutationDatum]) -> tuple[PermutationDatum,
     return values
 
 
-def _grouped_indices(
+def _permutation_pool_indices(
     data: tuple[PermutationDatum, ...],
     config: PermutationTestConfig,
 ) -> dict[_StratumKey, tuple[int, ...]]:
@@ -550,15 +603,72 @@ def _grouped_indices(
         parts: list[str] = []
         if config.within_instrument:
             parts.append(f"instrument:{item.instrument_id}")
+        parts.append(f"venue:{item.venue}")
         if config.session_restricted:
             if item.session_id is None:
                 raise ValueError("session-restricted permutation requires supplied session_id")
             parts.append(f"session:{item.session_id}")
         if item.permutation_stratum is not None:
             parts.append(f"stratum:{item.permutation_stratum}")
-        key = tuple(parts) if parts else ("cross-instrument-opt-in",)
+        key = tuple(parts)
         groups.setdefault(key, []).append(index)
     return {key: tuple(indices) for key, indices in sorted(groups.items())}
+
+
+def _build_block_plans(
+    data: tuple[PermutationDatum, ...],
+    config: PermutationTestConfig,
+) -> dict[_StratumKey, _BlockPlan]:
+    pools = _permutation_pool_indices(data, config)
+    if config.block_unit is PermutationBlockUnit.NORMALIZED_EVENT_COUNT:
+        return {
+            key: _event_count_block_plan(data, indices, config.block_size)
+            for key, indices in pools.items()
+        }
+    if config.block_unit is PermutationBlockUnit.RESEARCH_OBSERVATION_COUNT:
+        return {
+            key: _BlockPlan(
+                target_indices=indices,
+                blocks=tuple(
+                    tuple(indices[start : start + config.block_size])
+                    for start in range(0, len(indices), config.block_size)
+                ),
+            )
+            for key, indices in pools.items()
+        }
+    raise NotImplementedError(
+        "exchange-time and session permutation block construction are deferred"
+    )
+
+
+def _event_count_block_plan(
+    data: tuple[PermutationDatum, ...],
+    pool_indices: tuple[int, ...],
+    block_size_events: int,
+) -> _BlockPlan:
+    coordinate_groups: dict[tuple[InstrumentId, str], list[int]] = {}
+    for index in pool_indices:
+        datum = data[index]
+        market_identity = (datum.instrument_id, datum.venue)
+        coordinate_groups.setdefault(market_identity, []).append(index)
+
+    blocks: list[_BlockIndex] = []
+    for market_identity in sorted(
+        coordinate_groups,
+        key=lambda identity: (str(identity[0]), identity[1]),
+    ):
+        indices = tuple(coordinate_groups[market_identity])
+        origin = min(data[index].prediction_anchor_event_index for index in indices)
+        by_number: dict[int, list[int]] = {}
+        for index in indices:
+            block_number = (data[index].prediction_anchor_event_index - origin) // block_size_events
+            by_number.setdefault(block_number, []).append(index)
+        blocks.extend(tuple(by_number[number]) for number in sorted(by_number))
+
+    blocks.sort(key=lambda block: block[0])
+    ordered_blocks = tuple(blocks)
+    target_indices = tuple(index for block in ordered_blocks for index in block)
+    return _BlockPlan(target_indices=target_indices, blocks=ordered_blocks)
 
 
 def _exact_permutation_count(blocks: dict[_StratumKey, tuple[_BlockIndex, ...]]) -> int:
@@ -654,6 +764,12 @@ def _instrument_scope(
 ) -> str:
     instruments = ",".join(sorted({str(item.instrument_id) for item in data}))
     return instruments if config.within_instrument else f"CROSS_INSTRUMENT_OPT_IN:{instruments}"
+
+
+def _p_value_method(mode: PermutationMode) -> PermutationPValueMethod:
+    if mode is PermutationMode.EXACT:
+        return PermutationPValueMethod.EXACT_ENUMERATION
+    return PermutationPValueMethod.MONTE_CARLO_PLUS_ONE
 
 
 def _derive_test_id(

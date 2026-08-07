@@ -13,6 +13,7 @@ from sra_nexus.research.enums import (
     PermutationAlternative,
     PermutationBlockUnit,
     PermutationMode,
+    PermutationPValueMethod,
     WalkForwardMode,
 )
 from sra_nexus.research.export import export_research_dataset_jsonl
@@ -75,6 +76,7 @@ from sra_nexus.research.permutation import (
     ReversalSuccessRate,
     UpperLowerQuantileDifference,
     WalkForwardPermutationSummary,
+    build_permutation_blocks,
     empirical_permutation_p_value,
     generate_permuted_label_assignments,
     permutation_datum_from_observation,
@@ -125,6 +127,7 @@ __all__ = [
     "PermutationBlockUnit",
     "PermutationDatum",
     "PermutationMode",
+    "PermutationPValueMethod",
     "PermutationTestConfig",
     "PermutationTestResult",
     "PermutationTestService",
@@ -150,6 +153,7 @@ __all__ = [
     "WalkForwardSplit",
     "WalkForwardSplitter",
     "adjust_research_p_values",
+    "build_permutation_blocks",
     "empirical_permutation_p_value",
     "evaluate_failed_aggression_condition",
     "feature_availability_from_input",

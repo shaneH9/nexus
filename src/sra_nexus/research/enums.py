@@ -33,10 +33,18 @@ class PermutationMode(StrEnum):
     MONTE_CARLO = "MONTE_CARLO"
 
 
+class PermutationPValueMethod(StrEnum):
+    """Estimator used to convert a permutation null into a p-value."""
+
+    EXACT_ENUMERATION = "EXACT_ENUMERATION"
+    MONTE_CARLO_PLUS_ONE = "MONTE_CARLO_PLUS_ONE"
+
+
 class PermutationBlockUnit(StrEnum):
     """Units in which a chronological permutation block may be defined."""
 
     NORMALIZED_EVENT_COUNT = "NORMALIZED_EVENT_COUNT"
+    RESEARCH_OBSERVATION_COUNT = "RESEARCH_OBSERVATION_COUNT"
     EXCHANGE_TIME = "EXCHANGE_TIME"
     SESSION = "SESSION"
 
