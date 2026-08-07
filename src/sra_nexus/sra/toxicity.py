@@ -47,7 +47,7 @@ from sra_nexus.sra.state import (
     elapsed_decimal_seconds,
 )
 from sra_nexus.sra.toxicity_math import (
-    calculate_bounded_positive_ratio,
+    calculate_bounded_excess_ratio,
     calculate_bounded_replenishment_failure,
     calculate_composite_toxicity,
     calculate_credibility_interactions,
@@ -70,8 +70,8 @@ from sra_nexus.sra.toxicity_math import (
 )
 from sra_nexus.sra.windows import AggressiveTradeObservation
 
-TOXICITY_VERSION = "toxicity-v1"
-TOXICITY_COMPARISON_VERSION = "toxicity-comparison-v1"
+TOXICITY_VERSION = "toxicity-v2"
+TOXICITY_COMPARISON_VERSION = "toxicity-comparison-v2"
 
 UnitIntervalDecimal = Annotated[
     ExactDecimal,
@@ -410,7 +410,7 @@ class SpreadToxicityFeatures(ContractModel):
         )
         if self.spread_expansion_ratio != expected_ratio:
             raise ValueError("spread expansion ratio is inconsistent")
-        if self.bounded_spread_expansion != calculate_bounded_positive_ratio(expected_ratio):
+        if self.bounded_spread_expansion != calculate_bounded_excess_ratio(expected_ratio):
             raise ValueError("bounded spread expansion is inconsistent")
         return self
 
@@ -436,7 +436,7 @@ class VolatilityToxicityFeatures(ContractModel):
         )
         if self.volatility_jump_ratio != expected_ratio:
             raise ValueError("volatility jump ratio is inconsistent")
-        if self.bounded_volatility_jump != calculate_bounded_positive_ratio(expected_ratio):
+        if self.bounded_volatility_jump != calculate_bounded_excess_ratio(expected_ratio):
             raise ValueError("bounded volatility jump is inconsistent")
         return self
 
@@ -1251,7 +1251,7 @@ def _build_market_state_features(
             post_shock_spread=post_spread,
             absolute_spread_change=post_spread - baseline_spread,
             spread_expansion_ratio=spread_ratio,
-            bounded_spread_expansion=calculate_bounded_positive_ratio(spread_ratio),
+            bounded_spread_expansion=calculate_bounded_excess_ratio(spread_ratio),
             epsilon=config.epsilon,
         ),
         volatility=VolatilityToxicityFeatures(
@@ -1260,7 +1260,7 @@ def _build_market_state_features(
             pre_shock_realized_volatility=pre_rv,
             post_shock_realized_volatility=post_rv,
             volatility_jump_ratio=volatility_ratio,
-            bounded_volatility_jump=calculate_bounded_positive_ratio(volatility_ratio),
+            bounded_volatility_jump=calculate_bounded_excess_ratio(volatility_ratio),
             epsilon=config.epsilon,
         ),
     )

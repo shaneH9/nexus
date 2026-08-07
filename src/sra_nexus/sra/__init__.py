@@ -168,6 +168,7 @@ from sra_nexus.sra.toxicity import (
     compare_toxicity,
 )
 from sra_nexus.sra.toxicity_math import (
+    calculate_bounded_excess_ratio,
     calculate_bounded_positive_ratio,
     calculate_bounded_replenishment_failure,
     calculate_composite_toxicity,
@@ -315,6 +316,7 @@ __all__ = [
     "build_shock_pair",
     "build_shock_features",
     "calculate_absorption_efficiency",
+    "calculate_bounded_excess_ratio",
     "calculate_bounded_positive_ratio",
     "calculate_bounded_replenishment_failure",
     "calculate_composite_toxicity",

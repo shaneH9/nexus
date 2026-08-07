@@ -3231,7 +3231,7 @@ causal availability, as separate context alongside the market-side vector.
 flow, shock persistence/run, impact, replenishment, MBO liquidity flow, market
 state, and optional credibility-interaction components. It owns its current
 shock, exact observation boundaries, latest-evidence availability, complete
-configuration, and `toxicity-v1` feature version.
+configuration, and `toxicity-v2` feature version.
 
 ## Spread response
 
@@ -3245,9 +3245,12 @@ AbsoluteSpreadChange = PostShockSpread - BaselineSpread
 SpreadExpansionRatio = PostShockSpread / BaselineSpread
 ```
 
-Epsilon guards a zero baseline only. A one-sided book makes spread response
-unavailable; no artificial large spread is fabricated, and the unavailable
-result retains a one-sided-book flag.
+`SpreadExpansionRatio = 1` is the neutral no-change baseline. The raw ratio is
+never clamped. Only excess above one contributes to bounded spread-expansion
+toxicity, so contraction and no change both contribute zero. Epsilon guards a
+zero baseline only. A one-sided book makes spread response unavailable; no
+artificial large spread is fabricated, and the unavailable result retains a
+one-sided-book flag.
 
 ## Event-time volatility response
 
@@ -3264,14 +3267,31 @@ VolatilityJumpRatio = PostShockRV / PreShockRV
 The pre-window requires `N + 1` exact states for `N` returns. The post-window
 runs from shock end through `N` future normalized events. Epsilon guards a zero
 pre-shock RV. Raw pre/post RV values and the raw ratio remain available.
+`VolatilityJumpRatio = 1` is neutral. Only ratios above one contribute to the
+bounded volatility-jump component; flat or lower post-shock volatility
+contributes zero.
 
 ## Optional engineering-prior composite
 
-Unbounded nonnegative ratios use the documented monotonic transform:
+Absolute nonnegative magnitudes whose neutral baseline is zero may use:
 
 ```text
-BoundedRatio(x) = x / (1 + x)
+BoundedPositiveMagnitude(x) = x / (1 + x)
 ```
+
+Expansion and jump ratios have a different neutral baseline of one. Their
+bounded transform is therefore:
+
+```text
+ExcessRatio = max(Ratio - 1, 0)
+
+BoundedExcessRatio = ExcessRatio / (1 + ExcessRatio)
+```
+
+Thus a raw ratio at or below one maps to zero, while a ratio above one maps
+monotonically into `[0, 1)`. The raw ratio remains unchanged. Spread expansion
+and volatility jump use `BoundedExcessRatio`; they must not use the generic
+zero-neutral magnitude transform.
 
 The exact convex composite is:
 
@@ -3306,7 +3326,7 @@ mandatory feature.
 
 ## Post-shock windows, availability, and unavailability
 
-Version 1 implements post-shock toxicity only. Defaults are 50 normalized
+The current implementation remains post-shock only. Defaults are 50 normalized
 events for flow, the latest 4 qualifying shocks, 25-event impact and
 replenishment horizons, 20 pre-events for spread, 20 pre-returns and 25
 post-returns for volatility, and the original top 3 price levels for liquidity
@@ -3338,6 +3358,11 @@ complete vector is atomic; unavailable mandatory evidence never produces a
 partially fabricated vector. `ToxicityService` only selects exact windows,
 invokes pure equations and MBO accounting, and constructs the typed result. It
 does not emit alpha, BUY/SELL decisions, position sizes, or orders.
+
+The corrected output versions are `toxicity-v2` and
+`toxicity-comparison-v2`. Version 2 replaces the v1 zero-neutral magnitude
+transform for spread and volatility with the one-neutral excess-ratio
+transform. Raw spread and volatility ratios are unchanged.
 
 See [ADR 0009](decisions/0009-post-shock-market-toxicity.md).
 

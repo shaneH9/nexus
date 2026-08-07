@@ -269,9 +269,25 @@ def calculate_volatility_jump_ratio(
 
 
 def calculate_bounded_positive_ratio(value: Decimal) -> Decimal:
-    """Return monotonic ``value / (1 + value)`` for a finite non-negative ratio."""
+    """Bound absolute non-negative magnitude with ``value / (1 + value)``.
+
+    This transform has a neutral baseline of zero. It must not be used for an
+    expansion or jump ratio whose neutral baseline is one.
+    """
     _require_non_negative((value,), "positive ratio")
     return value / (Decimal(1) + value)
+
+
+def calculate_bounded_excess_ratio(ratio: Decimal) -> Decimal:
+    """Bound only the non-negative excess above a neutral ratio of one.
+
+    The exact transform is ``max(ratio - 1, 0) / (1 + max(ratio - 1, 0))``.
+    A ratio at or below one contributes no increase; a finite ratio above one
+    produces a result in ``[0, 1)`` without changing the raw ratio.
+    """
+    _require_non_negative((ratio,), "excess ratio")
+    excess = max(ratio - Decimal(1), Decimal(0))
+    return excess / (Decimal(1) + excess)
 
 
 def calculate_composite_toxicity(

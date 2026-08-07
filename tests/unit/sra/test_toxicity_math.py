@@ -7,6 +7,10 @@ import pytest
 from sra_nexus.sra import (
     FlowDirection,
     ShockDirection,
+    SpreadToxicityFeatures,
+    ToxicityWeights,
+    VolatilityToxicityFeatures,
+    calculate_bounded_excess_ratio,
     calculate_bounded_positive_ratio,
     calculate_bounded_replenishment_failure,
     calculate_composite_toxicity,
@@ -141,14 +145,65 @@ def test_net_liquidity_and_withdrawal_equations_are_exact() -> None:
     assert calculate_withdrawal_pressure(Decimal("20"), Decimal("80"), EPSILON) == Decimal("0.8")
 
 
-def test_spread_expansion_ratio_and_absolute_change_are_exact() -> None:
-    """The deterministic baseline ratio should retain its unbounded raw value."""
-    baseline = Decimal("0.01")
-    post = Decimal("0.03")
+@pytest.mark.parametrize(
+    ("ratio", "expected"),
+    [
+        (Decimal("0"), Decimal("0")),
+        (Decimal("0.5"), Decimal("0")),
+        (Decimal("1"), Decimal("0")),
+        (Decimal("2"), Decimal("0.5")),
+        (Decimal("3"), Decimal(2) / Decimal(3)),
+    ],
+)
+def test_bounded_excess_ratio_uses_one_as_its_neutral_baseline(
+    ratio: Decimal,
+    expected: Decimal,
+) -> None:
+    """Only positive excess above a raw ratio of one should survive bounding."""
+    assert calculate_bounded_excess_ratio(ratio) == expected
 
-    assert post - baseline == Decimal("0.02")
-    assert calculate_spread_expansion_ratio(baseline, post, EPSILON) == Decimal(3)
-    assert calculate_bounded_positive_ratio(Decimal(3)) == Decimal("0.75")
+
+def test_absolute_magnitude_and_excess_ratio_transforms_remain_distinct() -> None:
+    """The generic magnitude transform should retain its zero-neutral semantics."""
+    assert calculate_bounded_positive_ratio(Decimal(1)) == Decimal("0.5")
+    assert calculate_bounded_excess_ratio(Decimal(1)) == 0
+    with pytest.raises(ValueError, match="non-negative"):
+        calculate_bounded_excess_ratio(Decimal("-0.01"))
+
+
+@pytest.mark.parametrize(
+    ("baseline", "post", "expected_ratio", "expected_bounded"),
+    [
+        (Decimal("0.01"), Decimal("0.01"), Decimal("1"), Decimal("0")),
+        (Decimal("0.02"), Decimal("0.01"), Decimal("0.5"), Decimal("0")),
+        (Decimal("0.01"), Decimal("0.02"), Decimal("2"), Decimal("0.5")),
+    ],
+)
+def test_spread_component_bounds_only_expansion_above_baseline(
+    baseline: Decimal,
+    post: Decimal,
+    expected_ratio: Decimal,
+    expected_bounded: Decimal,
+) -> None:
+    """Raw spread ratio and change remain intact while contraction contributes zero."""
+    component = SpreadToxicityFeatures(
+        baseline_event_count=1,
+        baseline_spread=baseline,
+        post_shock_horizon_events=1,
+        post_shock_spread=post,
+        absolute_spread_change=post - baseline,
+        spread_expansion_ratio=calculate_spread_expansion_ratio(
+            baseline,
+            post,
+            EPSILON,
+        ),
+        bounded_spread_expansion=calculate_bounded_excess_ratio(expected_ratio),
+        epsilon=EPSILON,
+    )
+
+    assert component.absolute_spread_change == post - baseline
+    assert component.spread_expansion_ratio == expected_ratio
+    assert component.bounded_spread_expansion == expected_bounded
 
 
 def test_event_time_volatility_matches_arithmetic_return_rms() -> None:
@@ -164,6 +219,42 @@ def test_event_time_volatility_matches_arithmetic_return_rms() -> None:
     assert pre_rv == expected_pre
     assert post_rv == expected_post
     assert calculate_volatility_jump_ratio(pre_rv, post_rv, EPSILON) == Decimal(2)
+    assert calculate_bounded_excess_ratio(Decimal(2)) == Decimal("0.5")
+
+
+@pytest.mark.parametrize(
+    ("baseline", "post", "expected_ratio", "expected_bounded"),
+    [
+        (Decimal("0.01"), Decimal("0.01"), Decimal("1"), Decimal("0")),
+        (Decimal("0.02"), Decimal("0.01"), Decimal("0.5"), Decimal("0")),
+        (Decimal("0.01"), Decimal("0.02"), Decimal("2"), Decimal("0.5")),
+    ],
+)
+def test_volatility_component_bounds_only_jump_above_baseline(
+    baseline: Decimal,
+    post: Decimal,
+    expected_ratio: Decimal,
+    expected_bounded: Decimal,
+) -> None:
+    """Raw RV ratio remains intact while flat or lower volatility contributes zero."""
+    component = VolatilityToxicityFeatures(
+        baseline_return_count=1,
+        response_return_count=1,
+        pre_shock_realized_volatility=baseline,
+        post_shock_realized_volatility=post,
+        volatility_jump_ratio=calculate_volatility_jump_ratio(
+            baseline,
+            post,
+            EPSILON,
+        ),
+        bounded_volatility_jump=calculate_bounded_excess_ratio(expected_ratio),
+        epsilon=EPSILON,
+    )
+
+    assert component.pre_shock_realized_volatility == baseline
+    assert component.post_shock_realized_volatility == post
+    assert component.volatility_jump_ratio == expected_ratio
+    assert component.bounded_volatility_jump == expected_bounded
 
 
 def test_zero_baseline_volatility_uses_epsilon_without_nonfinite_output() -> None:
@@ -178,7 +269,7 @@ def test_zero_baseline_volatility_uses_epsilon_without_nonfinite_output() -> Non
     assert pre_rv == 0
     assert ratio == post_rv / EPSILON
     assert ratio.is_finite()
-    assert calculate_bounded_positive_ratio(ratio) <= 1
+    assert calculate_bounded_excess_ratio(ratio) < 1
 
 
 @pytest.mark.parametrize(
@@ -213,6 +304,22 @@ def test_composite_is_an_exact_convex_engineering_prior() -> None:
     assert calculate_composite_toxicity((Decimal(1),), (Decimal(1),)) == 1
     with pytest.raises(ValueError, match=r"\[0, 1\]"):
         calculate_composite_toxicity((Decimal("1.1"),), (Decimal(1),))
+
+
+def test_neutral_spread_and_volatility_add_nothing_to_composite() -> None:
+    """Raw ratios of one must not create the former artificial 0.5 components."""
+    weights = ToxicityWeights().as_tuple()
+    components = (
+        Decimal(0),
+        Decimal(0),
+        Decimal(0),
+        Decimal(0),
+        calculate_bounded_excess_ratio(Decimal(1)),
+        calculate_bounded_excess_ratio(Decimal(1)),
+        Decimal(0),
+    )
+
+    assert calculate_composite_toxicity(components, weights) == 0
 
 
 def test_pair_delta_toxicity_is_exact_and_signed() -> None:

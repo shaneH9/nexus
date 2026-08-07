@@ -21,11 +21,14 @@ is not yet part of market-side toxicity.
 
 ## Decision
 
-Version 1 is post-shock only and is named `toxicity-v1`. Pure exact-Decimal
+The current implementation is post-shock only and is named `toxicity-v2`, with
+pair-score comparisons named `toxicity-comparison-v2`. Pure exact-Decimal
 functions implement each equation separately from typed contracts and focused
 orchestration. `ToxicityService` produces either one complete immutable
 `ToxicityVector` or typed `ToxicityUnavailable`; mandatory components are never
-partially fabricated.
+partially fabricated. Version 2 corrects the bounded spread/volatility
+semantics from v1 without changing their raw ratios or any original SRA
+equation.
 
 Signed flow uses one value per true normalized market event:
 
@@ -70,8 +73,26 @@ Spread baseline is the exact median of the previous configured valid snapshots.
 A one-sided book returns unavailable spread rather than an invented extreme.
 Volatility is the unannualized RMS of arithmetic midprice returns over exact
 pre- and post-shock event windows. Raw spread and volatility values and ratios
-remain available; nonnegative ratios used in the score are bounded by
-`x / (1 + x)`.
+remain available:
+
+```text
+SpreadExpansionRatio = PostShockSpread / BaselineSpread
+VolatilityJumpRatio = PostShockRV / PreShockRV
+```
+
+Both ratios have a neutral baseline of one. Only increase above that baseline
+participates in their bounded toxicity components:
+
+```text
+ExcessRatio = max(Ratio - 1, 0)
+BoundedExcessRatio = ExcessRatio / (1 + ExcessRatio)
+```
+
+Consequently, raw ratios at or below one contribute zero, while ratios above
+one increase monotonically toward one. Raw ratios remain unclamped and preserve
+their existing zero-baseline epsilon behavior. The generic zero-neutral
+positive-magnitude transform `x / (1 + x)` remains a separate function and is
+not used for spread expansion or volatility jump.
 
 The optional toxicity score is a configurable exact convex combination with
 initial weights 0.20 flow, 0.15 shock persistence, 0.15 impact, 0.15
@@ -107,6 +128,12 @@ Rejected because movement against the aggressor could then appear increasingly
 toxic. The signed impact change is retained and the bounded component drops to
 zero for non-positive current directional impact.
 
+### Reuse the zero-neutral positive-magnitude transform for response ratios
+
+Rejected because spread and volatility response ratios are neutral at one, not
+zero. Applying `Ratio / (1 + Ratio)` directly would assign an artificial 0.5
+toxicity component to no change.
+
 ### Treat executions as cancellations or withdrawal
 
 Rejected because consumed displayed liquidity is observably distinct from
@@ -126,8 +153,9 @@ fabricated Milestone J inputs.
 
 ### Implement both at-shock and post-shock toxicity
 
-Deferred to keep their availability semantics disjoint. Version 1 is explicitly
-post-shock and cannot be used at shock end when response events are required.
+Deferred to keep their availability semantics disjoint. Both the initial and
+corrected versions are explicitly post-shock and cannot be used at shock end
+when response events are required.
 
 ## Consequences
 
@@ -136,6 +164,10 @@ weak recovery, withdrawal, spread, and volatility moved independently or
 together. Exact components are deterministic, bounded score inputs are
 transparent, and missing evidence remains typed. Historical replay cannot see a
 vector until its latest required process time.
+
+Neutral or declining spread and volatility now add exactly zero through those
+composite terms. Expansion and jumps remain monotonic above the neutral ratio,
+and the underlying raw ratios remain available for research.
 
 The implementation requires MBO lifecycle data for liquidity-flow components,
 explicit event indices, a valid comparable pair for impact escalation, and

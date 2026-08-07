@@ -48,6 +48,7 @@ from sra_nexus.sra import (
     ToxicityUnavailable,
     ToxicityUnavailableReason,
     ToxicityVector,
+    calculate_bounded_excess_ratio,
     market_event_reference,
     reconcile_aggressive_trade_observations,
 )
@@ -313,6 +314,11 @@ def test_service_builds_complete_post_shock_vector_at_latest_required_process_ti
     assert result.replenishment.raw_replenishment_failure == Decimal("0.2")
     assert result.liquidity.attacked_side is BookSide.BID
     assert result.liquidity.attacked.executed_quantity == 0
+    assert result.market_state.spread.spread_expansion_ratio == Decimal("3")
+    assert result.market_state.spread.bounded_spread_expansion == Decimal(2) / Decimal(3)
+    assert result.market_state.volatility.bounded_volatility_jump == (
+        calculate_bounded_excess_ratio(result.market_state.volatility.volatility_jump_ratio)
+    )
     assert not result.credibility.available
     assert result.credibility.liquidity_credibility is None
     assert Decimal(0) <= result.toxicity_score <= Decimal(1)
